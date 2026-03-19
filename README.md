@@ -39,8 +39,22 @@ $$ I_\textrm{b} \ddot{\theta} = m g l \theta - I_\textrm{w} \ddot{\varphi} $$
 
 ## step 1: simulate the physics with no controller
 
-
-- write the equation of motion that takes the current state $\theta$, $\dot{\theta}$, $\varphi$, $\dot{\varphi}$ and returns the derivatives $\ddot{\theta}$ and $\ddot{\varphi}$.
+- write the equation of motion that takes the current state $\theta$, $\dot{\theta}$, $\dot{\varphi}$ and returns the derivatives $\ddot{\theta}$ and $\ddot{\varphi}$.
 - use an ODE solver to step forward in time
-- plot $\theta$ over time to see the pendulum fall down
-- later, we will add a control law that computes $\ddot{\varphi}$ based on the current $\theta$.
+- plot $\theta$ over time to see the pendulum fall and swing
+- verify equilibria
+
+## step 2: add a controller
+
+- start with a simple PD controller
+- applies torque based on the angle and angular velocity of the body
+- plot the response to see if it stabilizes
+- should look like a damped oscillator
+
+## step 3: rewrite as a daemon process in rust
+
+- read from a simulated IMU
+- use the IMU data to update the state of the pendulum
+- compute the control torque based on the current state
+- apply the torque to the wheel
+- repeat in a loop to maintain balance
