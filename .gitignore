@@ -10,3 +10,4 @@ wheels/
 .venv
 
 rs-pendulum/target/
+.vscode/
