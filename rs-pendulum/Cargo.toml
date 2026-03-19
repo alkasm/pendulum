@@ -1,0 +1,13 @@
+[package]
+name = "pendulumd"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["sim"]
+sim = []
+hw = ["dep:mpu6050", "dep:linux-embedded-hal"]
+
+[dependencies]
+mpu6050 = { version = "0.1", optional = true }
+linux-embedded-hal = { version = "0.3", optional = true }
