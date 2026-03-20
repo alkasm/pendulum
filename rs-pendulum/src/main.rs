@@ -15,6 +15,8 @@ use pendulumd::hw;
 use pendulumd::imu::Imu;
 #[cfg(all(feature = "hw", target_os = "linux"))]
 use pendulumd::imu::Imu;
+#[cfg(any(feature = "sim", all(feature = "hw", target_os = "linux")))]
+use pendulumd::motor::{Motor, MotorCommand};
 #[cfg(feature = "sim")]
 use pendulumd::sim;
 
@@ -107,7 +109,15 @@ fn run_gui() {
     {
         match hw::Mpu6050Imu::new() {
             Ok(imu) => {
-                app.insert_resource(HwBackend { imu })
+                let motor = match hw::SparkfunIotMotor::new(0.012, 1500.0) {
+                    Ok(motor) => motor,
+                    Err(error) => {
+                        eprintln!("Failed to initialize SparkFun motor backend: {error:?}");
+                        return;
+                    }
+                };
+
+                app.insert_resource(HwBackend { imu, motor })
                     .add_systems(Update, update_from_hw_system);
             }
             Err(error) => {
@@ -177,6 +187,7 @@ struct SimBackend {
     config: sim::SimConfig,
     plant: sim::SimPlant,
     imu: sim::SimImu,
+    motor: sim::SimMotor,
     controller: PdController,
     sim_time_s: f64,
     #[cfg(feature = "gui")]
@@ -209,6 +220,7 @@ impl SimBackend {
             config,
             plant,
             imu,
+            motor: sim::SimMotor::new(config.max_motor_torque_nm, config.motor_no_load_speed_rad_s),
             controller: PdController::new(config.controller_kp, config.controller_kd),
             sim_time_s: 0.0,
             #[cfg(feature = "gui")]
@@ -219,15 +231,19 @@ impl SimBackend {
     fn step_once(&mut self) -> SimStepTelemetry {
         let dt_s = self.config.dt_s;
         let wheel_speed = self.plant.state().wheel_speed;
-        let speed_ratio =
-            (wheel_speed.abs() / self.config.motor_no_load_speed_rad_s).clamp(0.0, 1.0);
-        let available_torque = self.config.max_motor_torque_nm * (1.0 - speed_ratio);
 
         let sample = self.imu.read().expect("sim IMU should never fail");
         let torque_cmd = self
             .controller
             .torque_command(sample.theta, sample.theta_dot);
-        let wheel_torque = torque_cmd.clamp(-available_torque, available_torque);
+        let motor_telemetry = self
+            .motor
+            .command(MotorCommand {
+                torque_command_nm: torque_cmd,
+                observed_wheel_speed_rad_s: wheel_speed,
+            })
+            .expect("sim motor should never fail");
+        let wheel_torque = motor_telemetry.applied_torque_nm;
 
         self.plant.step(wheel_torque, Duration::from_secs_f64(dt_s));
         let state = self.plant.state();
@@ -238,8 +254,8 @@ impl SimBackend {
             state,
             torque_cmd,
             torque_applied: wheel_torque,
-            available_torque,
-            speed_ratio,
+            available_torque: motor_telemetry.available_torque_nm,
+            speed_ratio: motor_telemetry.speed_ratio,
             at_bound: state.theta.abs() >= (std::f64::consts::FRAC_PI_4 - 1e-6),
             sim_time_s: self.sim_time_s,
         }
@@ -287,15 +303,35 @@ fn run_console_hw() {
             return;
         }
     };
+    let mut motor = match hw::SparkfunIotMotor::new(0.012, 1500.0) {
+        Ok(motor) => motor,
+        Err(error) => {
+            eprintln!("Failed to initialize SparkFun motor backend: {error:?}");
+            return;
+        }
+    };
 
     loop {
         match imu.read() {
             Ok(sample) => {
+                let motor_telemetry = match motor.command(MotorCommand {
+                    torque_command_nm: 0.0,
+                    observed_wheel_speed_rad_s: 0.0,
+                }) {
+                    Ok(telemetry) => telemetry,
+                    Err(error) => {
+                        eprintln!("SparkFun motor command failed: {error:?}");
+                        return;
+                    }
+                };
                 eprintln!(
-                    "hw sample: theta={:+.3} rad ({:+6.1} deg) theta_dot={:+6.3} rad/s",
+                    "hw sample: theta={:+.3} rad ({:+6.1} deg) theta_dot={:+6.3} rad/s motor_torque={:+6.3} Nm motor_avail={:+6.3} Nm speed_ratio={:.3}",
                     sample.theta,
                     sample.theta.to_degrees(),
                     sample.theta_dot,
+                    motor_telemetry.applied_torque_nm,
+                    motor_telemetry.available_torque_nm,
+                    motor_telemetry.speed_ratio,
                 );
             }
             Err(error) => {
@@ -311,6 +347,7 @@ fn run_console_hw() {
 #[cfg_attr(feature = "gui", derive(Resource))]
 struct HwBackend {
     imu: hw::Mpu6050Imu,
+    motor: hw::SparkfunIotMotor,
 }
 
 #[cfg(feature = "gui")]
@@ -418,11 +455,22 @@ fn update_from_hw_system(
     mut hw_backend: ResMut<'_, HwBackend>,
     mut ui_state: ResMut<'_, PendulumUiState>,
 ) {
+    let motor_telemetry = match hw_backend.motor.command(MotorCommand {
+        torque_command_nm: 0.0,
+        observed_wheel_speed_rad_s: 0.0,
+    }) {
+        Ok(telemetry) => telemetry,
+        Err(error) => {
+            eprintln!("SparkFun motor command failed: {error:?}");
+            return;
+        }
+    };
+
     match hw_backend.imu.read() {
         Ok(sample) => {
             ui_state.theta = sample.theta;
             ui_state.theta_dot = sample.theta_dot;
-            ui_state.torque_nm = 0.0;
+            ui_state.torque_nm = motor_telemetry.applied_torque_nm;
         }
         Err(error) => {
             eprintln!("MPU-6050 read failed: {error:?}");

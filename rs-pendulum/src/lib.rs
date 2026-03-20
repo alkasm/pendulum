@@ -1,5 +1,6 @@
 pub mod controller;
 pub mod imu;
+pub mod motor;
 
 #[cfg(feature = "sim")]
 pub mod sim;

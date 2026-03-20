@@ -58,3 +58,61 @@ $$ I_\textrm{b} \ddot{\theta} = m g l \theta - I_\textrm{w} \ddot{\varphi} $$
 - compute the control torque based on the current state
 - apply the torque to the wheel
 - repeat in a loop to maintain balance
+
+## sensing and actuation model
+
+To move from a pure ODE to a real control system, we separate the problem into:
+
+- the **plant dynamics** (how the pendulum and wheel move),
+- the **measurement model** (what sensors tell us about that motion), and
+- the **actuator model** (what torque the motor can actually produce).
+
+### measurement model
+
+The state we care about is approximately:
+
+$$
+x = [\theta,\ \dot{\theta},\ \omega_w]
+$$
+
+where $\theta$ and $\dot{\theta}$ are body angle/rate, and $\omega_w = \dot{\varphi}$ is wheel speed.
+
+In practice, these come from different sensors:
+
+- IMU gives body attitude/rate, used for $(\theta, \dot{\theta})$,
+- hall sensor gives wheel kinematics, used for $\omega_w$,
+- current sensor gives electrical feedback $i$, used for limits/diagnostics and later torque estimation.
+
+So a simple measurement vector is:
+
+$$
+y = [\theta_m,\ \dot{\theta}_m,\ \omega_{w,m},\ i_m]
+$$
+
+### actuator model
+
+The controller computes a desired torque:
+
+$$
+\tau_{cmd} = k_p\,\theta + k_d\,\dot{\theta}
+$$
+
+but the motor driver applies a limited torque:
+
+$$
+\tau = \mathrm{clamp}(\tau_{cmd}, -\tau_{max}(\omega_w, i), +\tau_{max}(\omega_w, i))
+$$
+
+This captures practical limits such as speed-dependent torque rolloff and current constraints.
+
+### closed-loop ode view
+
+With sensing + actuation included, each step is:
+
+1. read $y$ from sensors,
+2. estimate/use states $(\theta, \dot{\theta}, \omega_w)$,
+3. compute $\tau_{cmd}$,
+4. apply actuator limits to get $\tau$,
+5. step the plant ODE with input $\tau$.
+
+So the controlled system remains the same ODE framework, but now with a realistic measurement path and actuator saturation path.
