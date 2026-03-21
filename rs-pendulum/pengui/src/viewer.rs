@@ -25,36 +25,87 @@ struct VisualConfigResource {
 
 #[derive(Resource, Debug, Clone, Copy)]
 struct PendulumUiState {
+    connected: bool,
+    step: u64,
+    sim_time_s: f64,
     theta: f64,
     theta_dot: f64,
     wheel_angle: f64,
+    wheel_speed: f64,
+    commanded_torque_nm: f64,
     torque_nm: f64,
+    available_torque_nm: f64,
+    phase_current_a: f64,
+    speed_ratio: f64,
 }
 
 impl Default for PendulumUiState {
     fn default() -> Self {
         Self {
+            connected: false,
+            step: 0,
+            sim_time_s: 0.0,
             theta: 0.0,
             theta_dot: 0.0,
             wheel_angle: 0.0,
+            wheel_speed: 0.0,
+            commanded_torque_nm: 0.0,
             torque_nm: 0.0,
+            available_torque_nm: 0.0,
+            phase_current_a: 0.0,
+            speed_ratio: 0.0,
         }
     }
 }
 
 impl PendulumUiState {
     fn apply_frame(&mut self, frame: TelemetryFrame) {
+        self.connected = true;
+        self.step = frame.step;
+        self.sim_time_s = frame.sim_time_s;
         self.theta = frame.theta_rad;
         self.theta_dot = frame.theta_dot_rad_s;
         self.wheel_angle = frame.wheel_angle_rad;
+        self.wheel_speed = frame.wheel_speed_rad_s;
+        self.commanded_torque_nm = frame.commanded_torque_nm;
         self.torque_nm = frame.applied_torque_nm;
+        self.available_torque_nm = frame.available_torque_nm;
+        self.phase_current_a = frame.phase_current_a;
+        self.speed_ratio = frame.speed_ratio;
     }
 }
 
 #[derive(Component)]
 struct MotorDisk;
 
-pub fn run(pending_connection: Arc<Mutex<Option<TelemetryReceiver>>>, visual_config: VisualizationConfig) {
+#[derive(Component)]
+struct TelemetryStatusText;
+
+#[derive(Component, Clone, Copy)]
+enum TelemetryValueKind {
+    Step,
+    SimTime,
+    ThetaRad,
+    ThetaDeg,
+    ThetaDot,
+    WheelAngle,
+    WheelSpeed,
+    CommandedTorque,
+    AppliedTorque,
+    AvailableTorque,
+    PhaseCurrent,
+    SpeedRatio,
+}
+
+#[derive(Component)]
+struct TelemetryValueText {
+    kind: TelemetryValueKind,
+}
+
+pub fn run(
+    pending_connection: Arc<Mutex<Option<TelemetryReceiver>>>,
+    visual_config: VisualizationConfig,
+) {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
@@ -70,6 +121,7 @@ pub fn run(pending_connection: Arc<Mutex<Option<TelemetryReceiver>>>, visual_con
             (
                 update_connection_system,
                 poll_telemetry_system,
+                update_telemetry_panel_system,
                 render_pendulum_system,
             ),
         );
@@ -86,6 +138,44 @@ fn setup_scene(mut commands: Commands<'_, '_>, mut images: ResMut<'_, Assets<Ima
         Transform::default(),
         MotorDisk,
     ));
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(0.0),
+                top: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                width: Val::Px(320.0),
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(14.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(10.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.06, 0.07, 0.09, 0.92)),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Telemetry"),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.92, 0.93, 0.95)),
+            ));
+
+            parent.spawn((
+                Text::new("Waiting for telemetry..."),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.62, 0.74, 0.88)),
+                TelemetryStatusText,
+            ));
+
+            spawn_telemetry_grid(parent);
+        });
 }
 
 fn make_motor_disk_image() -> Image {
@@ -157,6 +247,34 @@ fn poll_telemetry_system(
     }
 }
 
+fn update_telemetry_panel_system(
+    ui_state: Res<'_, PendulumUiState>,
+    mut text_queries: ParamSet<
+        '_,
+        '_,
+        (
+            Query<'_, '_, &mut Text, With<TelemetryStatusText>>,
+            Query<'_, '_, (&TelemetryValueText, &mut Text)>,
+        ),
+    >,
+) {
+    if !ui_state.is_changed() {
+        return;
+    }
+
+    for mut text in &mut text_queries.p0() {
+        text.0 = if ui_state.connected {
+            "Connected".to_string()
+        } else {
+            "Waiting for telemetry...".to_string()
+        };
+    }
+
+    for (value_kind, mut text) in &mut text_queries.p1() {
+        text.0 = format_telemetry_value(value_kind.kind, &ui_state);
+    }
+}
+
 fn render_pendulum_system(
     ui_state: Res<'_, PendulumUiState>,
     visual_config: Res<'_, VisualConfigResource>,
@@ -197,4 +315,75 @@ fn render_pendulum_system(
     }
 
     gizmos.circle_2d(com, motor_radius_px, motor_outline);
+}
+
+fn spawn_telemetry_grid(parent: &mut ChildBuilder) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(6.0),
+            ..default()
+        })
+        .with_children(|parent| {
+            spawn_telemetry_row(parent, "Step", TelemetryValueKind::Step);
+            spawn_telemetry_row(parent, "Time", TelemetryValueKind::SimTime);
+            spawn_telemetry_row(parent, "Theta", TelemetryValueKind::ThetaRad);
+            spawn_telemetry_row(parent, "Theta Deg", TelemetryValueKind::ThetaDeg);
+            spawn_telemetry_row(parent, "Theta Dot", TelemetryValueKind::ThetaDot);
+            spawn_telemetry_row(parent, "Wheel Angle", TelemetryValueKind::WheelAngle);
+            spawn_telemetry_row(parent, "Wheel Speed", TelemetryValueKind::WheelSpeed);
+            spawn_telemetry_row(parent, "Tau Cmd", TelemetryValueKind::CommandedTorque);
+            spawn_telemetry_row(parent, "Tau", TelemetryValueKind::AppliedTorque);
+            spawn_telemetry_row(parent, "Tau Avail", TelemetryValueKind::AvailableTorque);
+            spawn_telemetry_row(parent, "Current", TelemetryValueKind::PhaseCurrent);
+            spawn_telemetry_row(parent, "Speed Ratio", TelemetryValueKind::SpeedRatio);
+        });
+}
+
+fn spawn_telemetry_row(parent: &mut ChildBuilder, label: &'static str, kind: TelemetryValueKind) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.72, 0.77, 0.84)),
+            ));
+
+            parent.spawn((
+                Text::new(format_telemetry_value(kind, &PendulumUiState::default())),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.95, 0.96, 0.98)),
+                TelemetryValueText { kind },
+            ));
+        });
+}
+
+fn format_telemetry_value(kind: TelemetryValueKind, ui_state: &PendulumUiState) -> String {
+    match kind {
+        TelemetryValueKind::Step => ui_state.step.to_string(),
+        TelemetryValueKind::SimTime => format!("{:.2} s", ui_state.sim_time_s),
+        TelemetryValueKind::ThetaRad => format!("{:+.3} rad", ui_state.theta),
+        TelemetryValueKind::ThetaDeg => format!("{:+.1} deg", ui_state.theta.to_degrees()),
+        TelemetryValueKind::ThetaDot => format!("{:+.3} rad/s", ui_state.theta_dot),
+        TelemetryValueKind::WheelAngle => format!("{:+.3} rad", ui_state.wheel_angle),
+        TelemetryValueKind::WheelSpeed => format!("{:+.2} rad/s", ui_state.wheel_speed),
+        TelemetryValueKind::CommandedTorque => format!("{:+.3} Nm", ui_state.commanded_torque_nm),
+        TelemetryValueKind::AppliedTorque => format!("{:+.3} Nm", ui_state.torque_nm),
+        TelemetryValueKind::AvailableTorque => format!("{:+.3} Nm", ui_state.available_torque_nm),
+        TelemetryValueKind::PhaseCurrent => format!("{:+.3} A", ui_state.phase_current_a),
+        TelemetryValueKind::SpeedRatio => format!("{:.3}", ui_state.speed_ratio),
+    }
 }

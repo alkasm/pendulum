@@ -15,7 +15,6 @@ fn main() {
 
     while let Some(frame) = telemetry::recv_latest(&mut telemetry_rx) {
         log_telemetry(frame);
-        thread::sleep(Duration::from_millis(100));
     }
 
     println!("Telemetry stream ended.");
