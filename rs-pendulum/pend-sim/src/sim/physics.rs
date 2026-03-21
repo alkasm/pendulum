@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use pendulum_lib::config::{
-    DEFAULT_BODY_SIDE_LENGTH_M, DEFAULT_PIXELS_PER_METER, DEFAULT_WHEEL_RADIUS_M,
-};
+use pendulum_lib::config::{DEFAULT_BODY_SIDE_LENGTH_M, DEFAULT_WHEEL_RADIUS_M};
 
 const MAX_THETA_RAD: f64 = std::f64::consts::FRAC_PI_4;
 
@@ -23,7 +21,6 @@ pub struct SimConfig {
     pub controller_kp: f64,
     pub controller_kd: f64,
     pub dt_s: f64,
-    pub pixels_per_meter: f32,
 }
 
 impl SimConfig {
@@ -74,7 +71,6 @@ impl Default for SimConfig {
             controller_kp: 0.22,
             controller_kd: 0.03,
             dt_s: 0.01,
-            pixels_per_meter: DEFAULT_PIXELS_PER_METER,
         }
     }
 }
@@ -99,18 +95,6 @@ impl PlantParams {
             i_wheel: i_wheel_kg_m2,
             mgl: body_mass_kg * gravity_m_s2 * com_length_m,
         }
-    }
-
-    pub fn from_lumped_body_mass_and_wheel_disk(
-        body_mass_kg: f64,
-        com_length_m: f64,
-        wheel_mass_kg: f64,
-        wheel_radius_m: f64,
-        gravity_m_s2: f64,
-    ) -> Self {
-        let i_body = body_mass_kg * com_length_m.powi(2);
-        let i_wheel = 0.5 * wheel_mass_kg * wheel_radius_m.powi(2);
-        Self::from_inertias(i_body, i_wheel, body_mass_kg, com_length_m, gravity_m_s2)
     }
 
     pub fn from_uniform_rod_body_and_wheel_disk(

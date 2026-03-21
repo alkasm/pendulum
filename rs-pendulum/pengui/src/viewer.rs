@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -12,7 +14,8 @@ const MOTOR_TEXTURE_SIZE_PX: u32 = 128;
 
 #[derive(Resource)]
 struct GuiTelemetryReceiver {
-    receiver: TelemetryReceiver,
+    pending_connection: Arc<Mutex<Option<TelemetryReceiver>>>,
+    receiver: Option<TelemetryReceiver>,
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -51,17 +54,25 @@ impl PendulumUiState {
 #[derive(Component)]
 struct MotorDisk;
 
-pub fn run(telemetry_rx: TelemetryReceiver, visual_config: VisualizationConfig) {
+pub fn run(pending_connection: Arc<Mutex<Option<TelemetryReceiver>>>, visual_config: VisualizationConfig) {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::srgb(0.08, 0.08, 0.1)))
         .insert_resource(PendulumUiState::default())
         .insert_resource(GuiTelemetryReceiver {
-            receiver: telemetry_rx,
+            pending_connection,
+            receiver: None,
         })
         .insert_resource(VisualConfigResource { visual_config })
         .add_systems(Startup, setup_scene)
-        .add_systems(Update, (poll_telemetry_system, render_pendulum_system));
+        .add_systems(
+            Update,
+            (
+                update_connection_system,
+                poll_telemetry_system,
+                render_pendulum_system,
+            ),
+        );
 
     app.run();
 }
@@ -116,11 +127,32 @@ fn make_motor_disk_image() -> Image {
     )
 }
 
+fn update_connection_system(mut telemetry_receiver: ResMut<'_, GuiTelemetryReceiver>) {
+    if telemetry_receiver.receiver.is_some() {
+        return;
+    }
+
+    let maybe_receiver = telemetry_receiver
+        .pending_connection
+        .lock()
+        .expect("GUI pending connection mutex poisoned")
+        .take();
+
+    if let Some(receiver) = maybe_receiver {
+        println!("GUI telemetry connected.");
+        telemetry_receiver.receiver = Some(receiver);
+    }
+}
+
 fn poll_telemetry_system(
     mut telemetry_receiver: ResMut<'_, GuiTelemetryReceiver>,
     mut ui_state: ResMut<'_, PendulumUiState>,
 ) {
-    if let Some(frame) = telemetry::drain_latest(&mut telemetry_receiver.receiver) {
+    let Some(receiver) = telemetry_receiver.receiver.as_mut() else {
+        return;
+    };
+
+    if let Some(frame) = telemetry::drain_latest(receiver) {
         ui_state.apply_frame(frame);
     }
 }
