@@ -20,6 +20,7 @@ pub struct SimConfig {
     pub motor_torque_constant_nm_per_a: f64,
     pub controller_kp: f64,
     pub controller_kd: f64,
+    pub controller_kw: f64,
     pub dt_s: f64,
 }
 
@@ -70,6 +71,7 @@ impl Default for SimConfig {
             motor_torque_constant_nm_per_a: 0.03,
             controller_kp: 0.22,
             controller_kd: 0.03,
+            controller_kw: 0.002,
             dt_s: 0.01,
         }
     }
