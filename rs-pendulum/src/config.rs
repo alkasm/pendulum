@@ -16,7 +16,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             controller_kp: 0.22,
-            controller_kd: 0.03,
+            controller_kd: 0.001,
             dt_s: 0.01,
             // Datasheet stall/start torque: 320 gf*cm ~= 0.031 N*m.
             max_motor_torque_nm: 0.031,
