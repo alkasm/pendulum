@@ -2,11 +2,13 @@ use std::{
     io::{self, BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     thread,
+    time::Duration,
 };
 
 use crate::telemetry::{self, TelemetryFrame, TelemetryReceiver, TelemetryStream};
 
 pub const DEFAULT_TELEMETRY_ADDR: &str = "127.0.0.1:7001";
+const TELEMETRY_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 pub fn spawn_tcp_telemetry_server(
     bind_addr: impl Into<String>,
@@ -53,6 +55,29 @@ pub fn connect_tcp_telemetry(addr: &str) -> io::Result<TelemetryReceiver> {
     });
 
     Ok(telemetry_rx)
+}
+
+pub fn connect_tcp_telemetry_blocking(addr: &str) -> TelemetryReceiver {
+    let mut announced_wait = false;
+
+    loop {
+        match connect_tcp_telemetry(addr) {
+            Ok(telemetry_rx) => {
+                if announced_wait {
+                    println!("Telemetry stream connected at {addr}");
+                }
+                return telemetry_rx;
+            }
+            Err(error) => {
+                if !announced_wait {
+                    println!("Waiting for telemetry stream at {addr}...");
+                    announced_wait = true;
+                }
+                println!("Telemetry stream not ready at {addr}: {error}");
+                thread::sleep(TELEMETRY_CONNECT_RETRY_DELAY);
+            }
+        }
+    }
 }
 
 fn serve_client(mut stream: TcpStream, mut telemetry: TelemetryReceiver) {
