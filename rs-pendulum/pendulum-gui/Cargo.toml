@@ -1,0 +1,8 @@
+[package]
+name = "pendulum-gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.15", default-features = true }
+pendulum-lib = { path = ".." }

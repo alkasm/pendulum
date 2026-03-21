@@ -1,0 +1,12 @@
+[package]
+name = "pendulumd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy_ecs = "0.15"
+mpu6050 = "0.1"
+pendulum-lib = { path = ".." }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-embedded-hal = "0.3"

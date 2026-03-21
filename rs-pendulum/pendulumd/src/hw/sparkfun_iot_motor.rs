@@ -1,4 +1,4 @@
-use crate::motor::{Motor, MotorCommand, MotorTelemetry};
+use pendulum_lib::motor::{Motor, MotorCommand, MotorTelemetry};
 
 use super::ina240a1::Ina240A1;
 use super::tmag5273::Tmag5273;
@@ -12,6 +12,7 @@ pub enum SparkfunIotMotorError {
 pub struct SparkfunIotMotor {
     max_torque_nm: f64,
     no_load_speed_rad_s: f64,
+    torque_constant_nm_per_a: f64,
     tmc6300: Tmc6300,
     tmag5273: Tmag5273,
     ina240a1: Ina240A1,
@@ -22,6 +23,14 @@ impl SparkfunIotMotor {
         max_torque_nm: f64,
         no_load_speed_rad_s: f64,
     ) -> Result<Self, SparkfunIotMotorError> {
+        Self::with_torque_constant(max_torque_nm, no_load_speed_rad_s, 0.03)
+    }
+
+    pub fn with_torque_constant(
+        max_torque_nm: f64,
+        no_load_speed_rad_s: f64,
+        torque_constant_nm_per_a: f64,
+    ) -> Result<Self, SparkfunIotMotorError> {
         if no_load_speed_rad_s <= 0.0 {
             return Err(SparkfunIotMotorError::InvalidNoLoadSpeed);
         }
@@ -29,6 +38,7 @@ impl SparkfunIotMotor {
         Ok(Self {
             max_torque_nm,
             no_load_speed_rad_s,
+            torque_constant_nm_per_a,
             tmc6300: Tmc6300::new(),
             tmag5273: Tmag5273::new(),
             ina240a1: Ina240A1::new(),
@@ -60,13 +70,20 @@ impl Motor for SparkfunIotMotor {
             .torque_command_nm
             .clamp(-available_torque_nm, available_torque_nm);
         self.tmc6300.command_torque(applied_torque_nm);
-        let _ = self.ina240a1.read();
+        let phase_current_a = if self.torque_constant_nm_per_a > 0.0 {
+            applied_torque_nm / self.torque_constant_nm_per_a
+        } else {
+            0.0
+        };
+        self.ina240a1.set_mock_phase_current_a(phase_current_a);
+        let current = self.ina240a1.read();
 
         Ok(MotorTelemetry {
             applied_torque_nm,
             available_torque_nm,
             speed_ratio,
             wheel_speed_rad_s,
+            phase_current_a: current.phase_current_a,
         })
     }
 }

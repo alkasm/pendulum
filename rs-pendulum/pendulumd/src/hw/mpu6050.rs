@@ -1,9 +1,8 @@
 use linux_embedded_hal::{Delay, I2cdev};
 use mpu6050::Mpu6050;
 
-use crate::imu::{Imu, ImuSample};
+use pendulum_lib::imu::{Imu, ImuSample};
 
-// Default I²C bus on Raspberry Pi.
 const I2C_BUS: &str = "/dev/i2c-1";
 
 #[derive(Debug)]
@@ -40,14 +39,7 @@ impl Imu for Mpu6050Imu {
             .get_gyro()
             .map_err(|e| Mpu6050ImuError::Driver(format!("{e:?}")))?;
 
-        // theta: pitch angle from accelerometer (rad).
-        // Assumes the chip is mounted with its Z-axis along the pendulum arm
-        // (pointing up when balanced). At balance acc ≈ [0, 0, 1g]; a tilt of
-        // theta in the XZ plane gives acc.x = sin(θ), acc.z = cos(θ).
-        // TODO: allow for arbitrary translation + rotation transform for the IMU.
         let theta = (acc.x as f64).atan2(acc.z as f64);
-
-        // theta_dot: pitch rate from gyroscope Y-axis (rad/s).
         let theta_dot = gyro.y as f64;
 
         Ok(ImuSample { theta, theta_dot })

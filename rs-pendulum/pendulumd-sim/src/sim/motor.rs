@@ -1,4 +1,4 @@
-use crate::motor::{Motor, MotorCommand, MotorTelemetry};
+use pendulum_lib::motor::{Motor, MotorCommand, MotorTelemetry};
 
 use super::current_sensor::SimCurrentSensor;
 use super::hall_sensor::SimHallSensor;
@@ -8,16 +8,22 @@ use super::motor_driver::SimMotorDriver;
 pub struct SimMotor {
     max_torque_nm: f64,
     no_load_speed_rad_s: f64,
+    torque_constant_nm_per_a: f64,
     motor_driver: SimMotorDriver,
     hall_sensor: SimHallSensor,
     current_sensor: SimCurrentSensor,
 }
 
 impl SimMotor {
-    pub fn new(max_torque_nm: f64, no_load_speed_rad_s: f64) -> Self {
+    pub fn with_torque_constant(
+        max_torque_nm: f64,
+        no_load_speed_rad_s: f64,
+        torque_constant_nm_per_a: f64,
+    ) -> Self {
         Self {
             max_torque_nm,
             no_load_speed_rad_s,
+            torque_constant_nm_per_a,
             motor_driver: SimMotorDriver::new(),
             hall_sensor: SimHallSensor::new(),
             current_sensor: SimCurrentSensor::new(),
@@ -38,14 +44,20 @@ impl Motor for SimMotor {
             .torque_command_nm
             .clamp(-available_torque_nm, available_torque_nm);
         self.motor_driver.command_torque(applied_torque_nm);
-        self.current_sensor.sample_phase_current_a(0.0);
-        let _ = self.current_sensor.read();
+        let phase_current_a = if self.torque_constant_nm_per_a > 0.0 {
+            applied_torque_nm / self.torque_constant_nm_per_a
+        } else {
+            0.0
+        };
+        self.current_sensor.sample_phase_current_a(phase_current_a);
+        let current = self.current_sensor.read();
 
         Ok(MotorTelemetry {
             applied_torque_nm,
             available_torque_nm,
             speed_ratio,
             wheel_speed_rad_s: hall.wheel_speed_rad_s,
+            phase_current_a: current.phase_current_a,
         })
     }
 }

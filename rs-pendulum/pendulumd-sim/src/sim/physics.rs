@@ -1,5 +1,9 @@
 use std::time::Duration;
 
+use pendulum_lib::config::{
+    DEFAULT_BODY_SIDE_LENGTH_M, DEFAULT_PIXELS_PER_METER, DEFAULT_WHEEL_RADIUS_M,
+};
+
 const MAX_THETA_RAD: f64 = std::f64::consts::FRAC_PI_4;
 
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +19,7 @@ pub struct SimConfig {
     pub initial_wheel_speed: f64,
     pub max_motor_torque_nm: f64,
     pub motor_no_load_speed_rad_s: f64,
+    pub motor_torque_constant_nm_per_a: f64,
     pub controller_kp: f64,
     pub controller_kd: f64,
     pub dt_s: f64,
@@ -55,9 +60,9 @@ impl Default for SimConfig {
     fn default() -> Self {
         Self {
             body_mass_kg: 0.3,
-            body_side_length_m: 0.14,
+            body_side_length_m: DEFAULT_BODY_SIDE_LENGTH_M,
             wheel_mass_kg: 0.10,
-            wheel_radius_m: 0.03,
+            wheel_radius_m: DEFAULT_WHEEL_RADIUS_M,
             gravity_m_s2: 9.81,
             initial_theta: 0.02,
             initial_theta_dot: 0.0,
@@ -65,10 +70,11 @@ impl Default for SimConfig {
             initial_wheel_speed: 0.0,
             max_motor_torque_nm: 0.012,
             motor_no_load_speed_rad_s: 1500.0,
+            motor_torque_constant_nm_per_a: 0.03,
             controller_kp: 0.22,
             controller_kd: 0.03,
             dt_s: 0.01,
-            pixels_per_meter: 3200.0,
+            pixels_per_meter: DEFAULT_PIXELS_PER_METER,
         }
     }
 }

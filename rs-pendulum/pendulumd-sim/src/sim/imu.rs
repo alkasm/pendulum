@@ -1,4 +1,5 @@
-use crate::imu::{Imu, ImuSample};
+use pendulum_lib::imu::{Imu, ImuSample};
+
 use crate::sim::physics::PlantState;
 
 #[derive(Debug, Clone, Copy)]
