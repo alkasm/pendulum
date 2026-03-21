@@ -5,16 +5,16 @@ edition = "2024"
 
 [workspace]
 members = [
-    "pendulum-console",
-    "pendulum-gui",
-    "pendulumd",
-    "pendulumd-sim",
+    "pencat",
+    "pengui",
+    "pend",
+    "pend-sim",
 ]
 default-members = [
     ".",
-    "pendulum-console",
-    "pendulum-gui",
-    "pendulumd-sim",
+    "pencat",
+    "pengui",
+    "pend-sim",
 ]
 resolver = "2"
 

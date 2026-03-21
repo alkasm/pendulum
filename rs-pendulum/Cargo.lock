@@ -3450,17 +3450,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "pendulum-console"
+name = "pencat"
 version = "0.1.0"
 dependencies = [
  "pendulum-lib",
 ]
 
 [[package]]
-name = "pendulum-gui"
+name = "pend"
 version = "0.1.0"
 dependencies = [
- "bevy",
+ "bevy_ecs",
+ "linux-embedded-hal",
+ "mpu6050",
+ "pendulum-lib",
+]
+
+[[package]]
+name = "pend-sim"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
  "pendulum-lib",
 ]
 
@@ -3474,20 +3484,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "pendulumd"
+name = "pengui"
 version = "0.1.0"
 dependencies = [
- "bevy_ecs",
- "linux-embedded-hal",
- "mpu6050",
- "pendulum-lib",
-]
-
-[[package]]
-name = "pendulumd-sim"
-version = "0.1.0"
-dependencies = [
- "bevy_ecs",
+ "bevy",
  "pendulum-lib",
 ]
 

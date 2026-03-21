@@ -1,8 +1,8 @@
 [package]
-name = "pendulumd-sim"
+name = "pengui"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy_ecs = "0.15"
+bevy = { version = "0.15", default-features = true }
 pendulum-lib = { path = ".." }

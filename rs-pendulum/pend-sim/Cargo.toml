@@ -1,7 +1,8 @@
 [package]
-name = "pendulum-console"
+name = "pend-sim"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy_ecs = "0.15"
 pendulum-lib = { path = ".." }
