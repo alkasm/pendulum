@@ -1,5 +1,3 @@
-use std::{thread, time::Duration};
-
 use pendulum_lib::{
     telemetry::{self, TelemetryFrame},
     transport,
