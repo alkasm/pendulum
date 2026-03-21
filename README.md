@@ -50,7 +50,6 @@ $$ I_\textrm{b} \ddot{\theta} = m g l \theta - I_\textrm{w} \ddot{\varphi} $$
 - applies torque based on the angle and angular velocity of the body
 - plot the response to see if it stabilizes
 - should look like a damped oscillator
-- then add wheel-speed feedback so the controller also discourages dumping too much angular momentum into the reaction wheel
 
 ## step 3: rewrite as a daemon process in rust
 
@@ -95,7 +94,7 @@ $$
 The controller computes a desired torque:
 
 $$
-\tau_{cmd} = k_p\,\theta + k_d\,\dot{\theta} - k_w\,\omega_w
+\tau_{cmd} = k_p\,\theta + k_d\,\dot{\theta}
 $$
 
 but the motor driver applies a limited torque:
@@ -105,14 +104,6 @@ $$
 $$
 
 This captures practical limits such as speed-dependent torque rolloff and current constraints.
-
-The extra wheel-speed term is important for a reaction-wheel pendulum. A pure PD law can stabilize the body while still letting the wheel spin faster and faster, because it only cares about body angle and body rate. Penalizing wheel speed gives the controller a reason to satisfy the same ODE with less stored wheel momentum and less aggressive wheel acceleration. In this model, reducing commanded torque also reduces wheel acceleration directly, since
-
-$$
-\ddot{\varphi} = \tau / I_w
-$$
-
-so wheel-speed feedback acts as a practical regularizer on both spin and acceleration.
 
 ### closed-loop ode view
 

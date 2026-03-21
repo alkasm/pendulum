@@ -23,9 +23,9 @@ pub struct ControllerResource {
 }
 
 impl ControllerResource {
-    pub fn new(kp: f64, kd: f64, kw: f64) -> Self {
+    pub fn new(kp: f64, kd: f64) -> Self {
         Self {
-            controller: PdController::new(kp, kd, kw),
+            controller: PdController::new(kp, kd),
         }
     }
 }
@@ -89,14 +89,12 @@ pub fn pd_control_system(
     imu: Res<'_, ImuReading>,
     mut motor_state: ResMut<'_, MotorState>,
 ) {
-    let wheel_speed = motor_state.telemetry.wheel_speed_rad_s;
-    let torque_command_nm =
-        controller
-            .controller
-            .torque_command(imu.sample.theta, imu.sample.theta_dot, wheel_speed);
+    let torque_command_nm = controller
+        .controller
+        .torque_command(imu.sample.theta, imu.sample.theta_dot);
     motor_state.command = MotorCommand {
         torque_command_nm,
-        observed_wheel_speed_rad_s: wheel_speed,
+        observed_wheel_speed_rad_s: motor_state.telemetry.wheel_speed_rad_s,
     };
 }
 

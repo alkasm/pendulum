@@ -49,7 +49,6 @@ impl SimulationRuntime {
         world.insert_resource(ControllerResource::new(
             config.controller_kp,
             config.controller_kd,
-            config.controller_kw,
         ));
         world.insert_resource(ImuReading { sample: imu_sample });
         world.insert_resource(MotorState::default());

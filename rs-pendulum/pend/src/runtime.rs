@@ -19,7 +19,6 @@ use crate::hw::{Mpu6050Imu, SparkfunIotMotor, SparkfunIotMotorError};
 pub struct HardwareRuntimeConfig {
     pub controller_kp: f64,
     pub controller_kd: f64,
-    pub controller_kw: f64,
     pub dt_s: f64,
     pub max_motor_torque_nm: f64,
     pub motor_no_load_speed_rad_s: f64,
@@ -31,11 +30,13 @@ impl Default for HardwareRuntimeConfig {
         Self {
             controller_kp: 0.22,
             controller_kd: 0.03,
-            controller_kw: 0.002,
             dt_s: 0.01,
-            max_motor_torque_nm: 0.012,
-            motor_no_load_speed_rad_s: 1500.0,
-            motor_torque_constant_nm_per_a: 0.03,
+            // Datasheet stall/start torque: 320 gf*cm ~= 0.031 N*m.
+            max_motor_torque_nm: 0.031,
+            // Datasheet no-load speed: 2000 rpm ~= 209.4 rad/s.
+            motor_no_load_speed_rad_s: 209.4,
+            // Approximate torque constant from datasheet values: 0.031 N*m / 0.8 A ~= 0.039 N*m/A.
+            motor_torque_constant_nm_per_a: 0.039,
         }
     }
 }
@@ -80,7 +81,6 @@ impl HardwareRuntime {
         world.insert_resource(ControllerResource::new(
             config.controller_kp,
             config.controller_kd,
-            config.controller_kw,
         ));
         world.insert_resource(ImuReading::default());
         world.insert_resource(MotorState::default());
