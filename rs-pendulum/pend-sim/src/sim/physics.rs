@@ -1,11 +1,12 @@
 use std::time::Duration;
 
-use pendulum_lib::config::{DEFAULT_BODY_SIDE_LENGTH_M, DEFAULT_WHEEL_RADIUS_M};
+use pendulum_lib::config::{DEFAULT_BODY_SIDE_LENGTH_M, DEFAULT_WHEEL_RADIUS_M, RuntimeConfig};
 
 const MAX_THETA_RAD: f64 = std::f64::consts::FRAC_PI_4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SimConfig {
+    pub runtime: RuntimeConfig,
     pub body_mass_kg: f64,
     pub body_side_length_m: f64,
     pub wheel_mass_kg: f64,
@@ -15,12 +16,6 @@ pub struct SimConfig {
     pub initial_theta_dot: f64,
     pub initial_wheel_angle: f64,
     pub initial_wheel_speed: f64,
-    pub max_motor_torque_nm: f64,
-    pub motor_no_load_speed_rad_s: f64,
-    pub motor_torque_constant_nm_per_a: f64,
-    pub controller_kp: f64,
-    pub controller_kd: f64,
-    pub dt_s: f64,
 }
 
 impl SimConfig {
@@ -56,6 +51,7 @@ impl SimConfig {
 impl Default for SimConfig {
     fn default() -> Self {
         Self {
+            runtime: RuntimeConfig::default(),
             body_mass_kg: 0.3,
             body_side_length_m: DEFAULT_BODY_SIDE_LENGTH_M,
             wheel_mass_kg: 0.10,
@@ -65,15 +61,6 @@ impl Default for SimConfig {
             initial_theta_dot: 0.0,
             initial_wheel_angle: 0.0,
             initial_wheel_speed: 0.0,
-            // Datasheet stall/start torque: 320 gf*cm ~= 0.031 N*m.
-            max_motor_torque_nm: 0.031,
-            // Datasheet no-load speed: 2000 rpm ~= 209.4 rad/s.
-            motor_no_load_speed_rad_s: 209.4,
-            // Approximate torque constant from datasheet values: 0.031 N*m / 0.8 A ~= 0.039 N*m/A.
-            motor_torque_constant_nm_per_a: 0.039,
-            controller_kp: 0.22,
-            controller_kd: 0.03,
-            dt_s: 0.01,
         }
     }
 }

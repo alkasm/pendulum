@@ -38,6 +38,7 @@ pub struct SimulationRuntime {
 
 impl SimulationRuntime {
     pub fn new(config: SimConfig, telemetry: TelemetrySender) -> Self {
+        let runtime = config.runtime;
         let plant = SimPlant::new(config.plant_params(), config.initial_state());
         let initial_state = plant.state();
         let mut imu = SimImu::new();
@@ -45,10 +46,10 @@ impl SimulationRuntime {
         let imu_sample = imu.read().expect("sim IMU should never fail");
 
         let mut world = World::new();
-        world.insert_resource(ControlClock::new(config.dt_s));
+        world.insert_resource(ControlClock::new(runtime.dt_s));
         world.insert_resource(ControllerResource::new(
-            config.controller_kp,
-            config.controller_kd,
+            runtime.controller_kp,
+            runtime.controller_kd,
         ));
         world.insert_resource(ImuReading { sample: imu_sample });
         world.insert_resource(MotorState::default());
@@ -60,9 +61,9 @@ impl SimulationRuntime {
         world.insert_resource(SimImuResource { imu });
         world.insert_resource(SimMotorResource {
             motor: SimMotor::with_torque_constant(
-                config.max_motor_torque_nm,
-                config.motor_no_load_speed_rad_s,
-                config.motor_torque_constant_nm_per_a,
+                runtime.max_motor_torque_nm,
+                runtime.motor_no_load_speed_rad_s,
+                runtime.motor_torque_constant_nm_per_a,
             ),
         });
 
@@ -82,7 +83,7 @@ impl SimulationRuntime {
         Self {
             world,
             schedule,
-            step_dt: Duration::from_secs_f64(config.dt_s),
+            step_dt: Duration::from_secs_f64(runtime.dt_s),
         }
     }
 }

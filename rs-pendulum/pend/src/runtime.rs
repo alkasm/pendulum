@@ -3,6 +3,7 @@ use std::{sync::Mutex, thread, time::Duration};
 use bevy_ecs::prelude::*;
 
 use pendulum_lib::{
+    config::RuntimeConfig,
     imu::Imu,
     motor::Motor,
     runtime::core::{
@@ -14,32 +15,6 @@ use pendulum_lib::{
 };
 
 use crate::hw::{Mpu6050Imu, SparkfunIotMotor, SparkfunIotMotorError};
-
-#[derive(Debug, Clone, Copy)]
-pub struct HardwareRuntimeConfig {
-    pub controller_kp: f64,
-    pub controller_kd: f64,
-    pub dt_s: f64,
-    pub max_motor_torque_nm: f64,
-    pub motor_no_load_speed_rad_s: f64,
-    pub motor_torque_constant_nm_per_a: f64,
-}
-
-impl Default for HardwareRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            controller_kp: 0.22,
-            controller_kd: 0.03,
-            dt_s: 0.01,
-            // Datasheet stall/start torque: 320 gf*cm ~= 0.031 N*m.
-            max_motor_torque_nm: 0.031,
-            // Datasheet no-load speed: 2000 rpm ~= 209.4 rad/s.
-            motor_no_load_speed_rad_s: 209.4,
-            // Approximate torque constant from datasheet values: 0.031 N*m / 0.8 A ~= 0.039 N*m/A.
-            motor_torque_constant_nm_per_a: 0.039,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum HardwareRuntimeError {
@@ -65,7 +40,7 @@ pub struct HardwareRuntime {
 
 impl HardwareRuntime {
     pub fn new(
-        config: HardwareRuntimeConfig,
+        config: RuntimeConfig,
         telemetry: TelemetrySender,
     ) -> Result<Self, HardwareRuntimeError> {
         let imu = Mpu6050Imu::new().map_err(HardwareRuntimeError::Imu)?;
@@ -125,7 +100,7 @@ impl StepRuntime for HardwareRuntime {
 }
 
 pub fn spawn_hardware_runtime(
-    config: HardwareRuntimeConfig,
+    config: RuntimeConfig,
     telemetry: TelemetrySender,
 ) -> Result<thread::JoinHandle<()>, HardwareRuntimeError> {
     let runtime = HardwareRuntime::new(config, telemetry)?;

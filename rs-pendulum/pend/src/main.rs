@@ -4,10 +4,10 @@ mod hw;
 mod runtime;
 
 #[cfg(target_os = "linux")]
-use pendulum_lib::{telemetry::TelemetryStream, transport};
+use pendulum_lib::{config::RuntimeConfig, telemetry::TelemetryStream, transport};
 
 #[cfg(target_os = "linux")]
-use crate::runtime::{HardwareRuntimeConfig, spawn_hardware_runtime};
+use crate::runtime::spawn_hardware_runtime;
 
 #[cfg(target_os = "linux")]
 fn main() {
@@ -23,7 +23,7 @@ fn main() {
     println!("Hardware daemon streaming telemetry on {bind_addr}");
 
     let runtime_thread =
-        spawn_hardware_runtime(HardwareRuntimeConfig::default(), telemetry.publisher())
+        spawn_hardware_runtime(RuntimeConfig::default(), telemetry.publisher())
             .unwrap_or_else(|error| panic!("Failed to initialize hardware runtime: {error:?}"));
 
     runtime_thread
