@@ -4,10 +4,13 @@ version = "0.1.0"
 edition = "2024"
 default-run = "penfw"
 
-[dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 bevy_ecs = "0.15"
 mpu6050 = "0.1"
 pendulum-lib = { path = ".." }
-
-[target.'cfg(target_os = "linux")'.dependencies]
 linux-embedded-hal = "0.3"
+
+[target.xtensa-esp32-none-elf.dependencies]
+esp-hal = { version = "1.0.0", features = ["esp32", "unstable"] }
+esp-hal-smartled2 = "0.28.1"
+smart-leds = "0.4"

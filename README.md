@@ -277,3 +277,128 @@ If we want the software to follow the same sequence:
 6. add `imu_read`
 7. add a combined telemetry binary
 8. enable the PD control loop in the main `penfw` binary
+
+## flashing penfw
+
+The first firmware binary we have working for the ESP32 board is `blink` in `penfw/src/bin/blink.rs`. It drives the board's `STAT` RGB LED on `GPIO 2`.
+
+### build the firmware
+
+From the `penfw` crate directory:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cargo build --release --bin blink
+```
+
+That should produce the firmware ELF at:
+
+```bash
+/Users/alkasm/prog/pendulum/rs-pendulum/target/xtensa-esp32-none-elf/release/blink
+```
+
+### one-time host setup
+
+The ESP Rust toolchain is installed through `espup`. For a new terminal session, source the environment first:
+
+```bash
+. ~/export-esp.sh
+```
+
+If `espflash` is not installed yet, install it once on the host:
+
+```bash
+cargo install espflash
+```
+
+You may also need the CH340 serial driver on the host so the board shows up as a serial device over USB-C.
+
+### connect the board
+
+1. Plug the SparkFun IoT Brushless Motor Driver into your computer with USB-C.
+2. Do not connect the motor or pendulum hardware yet for the first blink test.
+3. Find the serial port name.
+
+On macOS:
+
+```bash
+ls /dev/cu.*
+```
+
+You are looking for a device that appears when the board is plugged in, often something like `/dev/cu.wchusbserial*` or `/dev/cu.usbserial*`.
+
+### normal flash attempt
+
+If the board enumerates normally, try:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+. ~/export-esp.sh
+espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+```
+
+Replace `/dev/cu.YOUR_PORT` with the actual port you found.
+
+What this should do:
+
+- reset the ESP32 into the serial bootloader if auto-reset works
+- flash the `blink` firmware
+- reboot into the new program
+- open a serial monitor afterward
+
+### if auto-bootloader does not work
+
+SparkFun documents manual firmware download mode with the `BOOT` and `RST` buttons:
+
+1. Hold down `BOOT`.
+2. While holding `BOOT`, press `RST` if the board is already powered, or plug in USB-C if it is not.
+3. Release `BOOT`.
+4. Run the same `espflash flash` command.
+5. After flashing finishes, press `RST` once to reboot into the new firmware if needed.
+
+So the manual recovery flow is:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+. ~/export-esp.sh
+espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+```
+
+If it fails to connect:
+
+- hold `BOOT`
+- tap `RST`
+- release `BOOT`
+- immediately rerun the flash command
+
+### what success should look like
+
+For this `blink` binary, success means:
+
+- flashing completes without errors
+- the board resets
+- the `STAT` RGB LED begins blinking red on and off
+
+### useful repeat commands
+
+Rebuild:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cargo build --release --bin blink
+```
+
+Flash again:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+. ~/export-esp.sh
+espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+```
+
+If you only want to verify compilation and not flash:
+
+```bash
+cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cargo check --bin blink
+```
