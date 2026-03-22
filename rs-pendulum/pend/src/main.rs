@@ -10,6 +10,9 @@ use pendulum_lib::{config::RuntimeConfig, telemetry::TelemetryStream, transport}
 use crate::runtime::spawn_hardware_runtime;
 
 #[cfg(target_os = "linux")]
+const DEFAULT_I2C_BUS: &str = "/dev/i2c-1";
+
+#[cfg(target_os = "linux")]
 fn main() {
     let bind_addr = std::env::args()
         .nth(1)
@@ -22,11 +25,19 @@ fn main() {
 
     println!("Hardware daemon streaming telemetry on {bind_addr}");
 
-    let runtime_thread =
-        spawn_hardware_runtime(RuntimeConfig::default(), telemetry.publisher())
-            .unwrap_or_else(|error| panic!("Failed to initialize hardware runtime: {error:?}"));
+    let runtime_thread = spawn_hardware_runtime(
+        RuntimeConfig::default(),
+        telemetry.publisher(),
+        DEFAULT_I2C_BUS,
+    )
+    .unwrap_or_else(|error| panic!("Failed to initialize hardware runtime: {error:?}"));
 
     runtime_thread
         .join()
         .expect("Hardware runtime thread terminated unexpectedly.");
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    println!("pend is linux only")
 }

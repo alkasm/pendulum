@@ -42,8 +42,9 @@ impl HardwareRuntime {
     pub fn new(
         config: RuntimeConfig,
         telemetry: TelemetrySender,
+        i2c_bus: &str,
     ) -> Result<Self, HardwareRuntimeError> {
-        let imu = Mpu6050Imu::new().map_err(HardwareRuntimeError::Imu)?;
+        let imu = Mpu6050Imu::new(i2c_bus).map_err(HardwareRuntimeError::Imu)?;
         let motor = SparkfunIotMotor::new(
             config.max_motor_torque_nm,
             config.motor_no_load_speed_rad_s,
@@ -102,8 +103,9 @@ impl StepRuntime for HardwareRuntime {
 pub fn spawn_hardware_runtime(
     config: RuntimeConfig,
     telemetry: TelemetrySender,
+    i2c_bus: &str,
 ) -> Result<thread::JoinHandle<()>, HardwareRuntimeError> {
-    let runtime = HardwareRuntime::new(config, telemetry)?;
+    let runtime = HardwareRuntime::new(config, telemetry, i2c_bus)?;
     Ok(thread::spawn(move || run_loop(runtime)))
 }
 

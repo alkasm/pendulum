@@ -3,8 +3,6 @@ use mpu6050::Mpu6050;
 
 use pendulum_lib::imu::{Imu, ImuSample};
 
-const I2C_BUS: &str = "/dev/i2c-1";
-
 #[derive(Debug)]
 pub enum Mpu6050ImuError {
     I2cOpen(std::io::Error),
@@ -16,8 +14,8 @@ pub struct Mpu6050Imu {
 }
 
 impl Mpu6050Imu {
-    pub fn new() -> Result<Self, Mpu6050ImuError> {
-        let i2c = I2cdev::new(I2C_BUS).map_err(Mpu6050ImuError::I2cOpen)?;
+    pub fn new(i2c_bus: &str) -> Result<Self, Mpu6050ImuError> {
+        let i2c = I2cdev::new(i2c_bus).map_err(Mpu6050ImuError::I2cOpen)?;
         let mut driver = Mpu6050::new(i2c);
         driver
             .init(&mut Delay)
@@ -33,7 +31,7 @@ impl Imu for Mpu6050Imu {
         let acc = self
             .driver
             .get_acc()
-            .map_err(|e| Mpu6050ImuError::Driver(format!("{e:?}")))?;
+            .map_err(|e| Mpu6050ImuEr0ror::Driver(format!("{e:?}")))?;
         let gyro = self
             .driver
             .get_gyro()
