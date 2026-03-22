@@ -2,6 +2,7 @@ use linux_embedded_hal::{Delay, I2cdev};
 use mpu6050::Mpu6050;
 
 use pendulum_lib::imu::{Imu, ImuSample};
+use uom::si::{angle::radian, angular_velocity::radian_per_second, f64::{Angle, AngularVelocity}};
 
 #[derive(Debug)]
 pub enum Mpu6050ImuError {
@@ -31,14 +32,14 @@ impl Imu for Mpu6050Imu {
         let acc = self
             .driver
             .get_acc()
-            .map_err(|e| Mpu6050ImuEr0ror::Driver(format!("{e:?}")))?;
+            .map_err(|e| Mpu6050ImuError::Driver(format!("{e:?}")))?;
         let gyro = self
             .driver
             .get_gyro()
             .map_err(|e| Mpu6050ImuError::Driver(format!("{e:?}")))?;
 
-        let theta = (acc.x as f64).atan2(acc.z as f64);
-        let theta_dot = gyro.y as f64;
+        let theta = Angle::new::<radian>((acc.x as f64).atan2(acc.z as f64));
+        let theta_dot = AngularVelocity::new::<radian_per_second>(gyro.y as f64);
 
         Ok(ImuSample { theta, theta_dot })
     }

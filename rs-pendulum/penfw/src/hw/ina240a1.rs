@@ -1,6 +1,8 @@
+use uom::si::{electric_current::ampere, f64::ElectricCurrent};
+
 #[derive(Debug, Clone, Copy)]
 pub struct Ina240A1Sample {
-    pub phase_current_a: f64,
+    pub phase_current: ElectricCurrent,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -12,7 +14,7 @@ impl Ina240A1 {
     pub fn new() -> Self {
         Self {
             sample: Ina240A1Sample {
-                phase_current_a: 0.0,
+                phase_current: ElectricCurrent::new::<ampere>(0.0),
             },
         }
     }

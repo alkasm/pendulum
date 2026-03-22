@@ -1,7 +1,9 @@
+use uom::si::f64::{Angle, AngularVelocity};
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImuSample {
-    pub theta: f64,
-    pub theta_dot: f64,
+    pub theta: Angle,
+    pub theta_dot: AngularVelocity,
 }
 
 pub trait Imu {

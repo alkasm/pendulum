@@ -1,4 +1,11 @@
-use pendulum_lib::imu::{Imu, ImuSample};
+use pendulum_lib::{
+    imu::{Imu, ImuSample},
+};
+use uom::si::{
+    angle::radian,
+    angular_velocity::radian_per_second,
+    f64::{Angle, AngularVelocity},
+};
 
 use crate::sim::physics::PlantState;
 
@@ -11,8 +18,8 @@ impl SimImu {
     pub fn new() -> Self {
         Self {
             sample: ImuSample {
-                theta: 0.0,
-                theta_dot: 0.0,
+                theta: Angle::new::<radian>(0.0),
+                theta_dot: AngularVelocity::new::<radian_per_second>(0.0),
             },
         }
     }

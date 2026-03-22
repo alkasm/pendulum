@@ -1,20 +1,21 @@
 use std::sync::{Arc, Condvar, Mutex};
 
 use serde::{Deserialize, Serialize};
+use uom::si::f64::{Angle, AngularVelocity, ElectricCurrent, Time, Torque};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct TelemetryFrame {
     pub step: u64,
-    pub sim_time_s: f64,
-    pub theta_rad: f64,
-    pub theta_dot_rad_s: f64,
-    pub wheel_angle_rad: f64,
-    pub wheel_speed_rad_s: f64,
-    pub commanded_torque_nm: f64,
-    pub applied_torque_nm: f64,
-    pub available_torque_nm: f64,
+    pub sim_time: Time,
+    pub theta: Angle,
+    pub theta_dot: AngularVelocity,
+    pub wheel_angle: Angle,
+    pub wheel_speed: AngularVelocity,
+    pub commanded_torque: Torque,
+    pub applied_torque: Torque,
+    pub available_torque: Torque,
     pub speed_ratio: f64,
-    pub phase_current_a: f64,
+    pub phase_current: ElectricCurrent,
 }
 
 #[derive(Clone)]

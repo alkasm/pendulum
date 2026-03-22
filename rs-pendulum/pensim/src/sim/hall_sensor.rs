@@ -1,6 +1,8 @@
+use uom::si::{angular_velocity::radian_per_second, f64::AngularVelocity};
+
 #[derive(Debug, Clone, Copy)]
 pub struct SimHallSensorSample {
-    pub wheel_speed_rad_s: f64,
+    pub wheel_speed: AngularVelocity,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -12,7 +14,7 @@ impl SimHallSensor {
     pub fn new() -> Self {
         Self {
             sample: SimHallSensorSample {
-                wheel_speed_rad_s: 0.0,
+                wheel_speed: AngularVelocity::new::<radian_per_second>(0.0),
             },
         }
     }
@@ -21,7 +23,7 @@ impl SimHallSensor {
         self.sample
     }
 
-    pub fn sample_wheel_speed_rad_s(&mut self, wheel_speed_rad_s: f64) {
-        self.sample.wheel_speed_rad_s = wheel_speed_rad_s;
+    pub fn sample_wheel_speed(&mut self, wheel_speed: AngularVelocity) {
+        self.sample.wheel_speed = wheel_speed;
     }
 }

@@ -11,6 +11,7 @@ use crate::{
     motor::{MotorCommand, MotorTelemetry},
     telemetry::{TelemetryFrame, TelemetrySender},
 };
+use uom::si::{f64::{Angle, Time}, time::second};
 
 pub trait StepRuntime: Send + 'static {
     fn step(&mut self);
@@ -33,16 +34,16 @@ impl ControllerResource {
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct ControlClock {
     pub step: u64,
-    pub sim_time_s: f64,
-    pub dt_s: f64,
+    pub sim_time: Time,
+    pub dt: Time,
 }
 
 impl ControlClock {
-    pub fn new(dt_s: f64) -> Self {
+    pub fn new(dt: Time) -> Self {
         Self {
             step: 0,
-            sim_time_s: 0.0,
-            dt_s,
+            sim_time: Time::new::<second>(0.0),
+            dt,
         }
     }
 }
@@ -60,7 +61,7 @@ pub struct MotorState {
 
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct WheelAngleEstimate {
-    pub angle_rad: f64,
+    pub angle: Angle,
 }
 
 #[derive(Resource, Clone)]
@@ -89,18 +90,19 @@ pub fn pd_control_system(
     imu: Res<'_, ImuReading>,
     mut motor_state: ResMut<'_, MotorState>,
 ) {
-    let torque_command_nm = controller
+    let torque_command = controller
         .controller
         .torque_command(imu.sample.theta, imu.sample.theta_dot);
     motor_state.command = MotorCommand {
-        torque_command_nm,
-        observed_wheel_speed_rad_s: motor_state.telemetry.wheel_speed_rad_s,
+        torque_command,
+        observed_wheel_speed: motor_state.telemetry.wheel_speed,
     };
 }
 
 pub fn advance_clock_system(mut clock: ResMut<'_, ControlClock>) {
     clock.step += 1;
-    clock.sim_time_s += clock.dt_s;
+    let dt = clock.dt;
+    clock.sim_time += dt;
 }
 
 pub fn publish_telemetry_system(
@@ -112,15 +114,15 @@ pub fn publish_telemetry_system(
 ) {
     publisher.sender.send(TelemetryFrame {
         step: clock.step,
-        sim_time_s: clock.sim_time_s,
-        theta_rad: imu.sample.theta,
-        theta_dot_rad_s: imu.sample.theta_dot,
-        wheel_angle_rad: wheel_angle.angle_rad,
-        wheel_speed_rad_s: motor_state.telemetry.wheel_speed_rad_s,
-        commanded_torque_nm: motor_state.command.torque_command_nm,
-        applied_torque_nm: motor_state.telemetry.applied_torque_nm,
-        available_torque_nm: motor_state.telemetry.available_torque_nm,
+        sim_time: clock.sim_time,
+        theta: imu.sample.theta,
+        theta_dot: imu.sample.theta_dot,
+        wheel_angle: wheel_angle.angle,
+        wheel_speed: motor_state.telemetry.wheel_speed,
+        commanded_torque: motor_state.command.torque_command,
+        applied_torque: motor_state.telemetry.applied_torque,
+        available_torque: motor_state.telemetry.available_torque,
         speed_ratio: motor_state.telemetry.speed_ratio,
-        phase_current_a: motor_state.telemetry.phase_current_a,
+        phase_current: motor_state.telemetry.phase_current,
     });
 }

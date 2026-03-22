@@ -46,14 +46,14 @@ impl HardwareRuntime {
     ) -> Result<Self, HardwareRuntimeError> {
         let imu = Mpu6050Imu::new(i2c_bus).map_err(HardwareRuntimeError::Imu)?;
         let motor = SparkfunIotMotor::new(
-            config.max_motor_torque_nm,
-            config.motor_no_load_speed_rad_s,
+            config.max_motor_torque,
+            config.motor_no_load_speed,
             config.motor_torque_constant_nm_per_a,
         )
         .map_err(HardwareRuntimeError::Motor)?;
 
         let mut world = World::new();
-        world.insert_resource(ControlClock::new(config.dt_s));
+        world.insert_resource(ControlClock::new(config.dt));
         world.insert_resource(ControllerResource::new(
             config.controller_kp,
             config.controller_kd,
@@ -85,7 +85,7 @@ impl HardwareRuntime {
         Ok(Self {
             world,
             schedule,
-            step_dt: Duration::from_secs_f64(config.dt_s),
+            step_dt: Duration::from_secs_f64(config.dt.get::<uom::si::time::second>()),
         })
     }
 }
@@ -133,5 +133,6 @@ fn integrate_wheel_angle_system(
     motor_state: Res<'_, MotorState>,
     mut wheel_angle: ResMut<'_, WheelAngleEstimate>,
 ) {
-    wheel_angle.angle_rad += motor_state.telemetry.wheel_speed_rad_s * clock.dt_s;
+    wheel_angle.angle +=
+        motor_state.telemetry.wheel_speed * clock.dt.get::<uom::si::time::second>();
 }

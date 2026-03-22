@@ -1,6 +1,8 @@
+use uom::si::{electric_current::ampere, f64::ElectricCurrent};
+
 #[derive(Debug, Clone, Copy)]
 pub struct SimCurrentSensorSample {
-    pub phase_current_a: f64,
+    pub phase_current: ElectricCurrent,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -12,7 +14,7 @@ impl SimCurrentSensor {
     pub fn new() -> Self {
         Self {
             sample: SimCurrentSensorSample {
-                phase_current_a: 0.0,
+                phase_current: ElectricCurrent::new::<ampere>(0.0),
             },
         }
     }
@@ -21,7 +23,7 @@ impl SimCurrentSensor {
         self.sample
     }
 
-    pub fn sample_phase_current_a(&mut self, phase_current_a: f64) {
-        self.sample.phase_current_a = phase_current_a;
+    pub fn sample_phase_current(&mut self, phase_current: ElectricCurrent) {
+        self.sample.phase_current = phase_current;
     }
 }

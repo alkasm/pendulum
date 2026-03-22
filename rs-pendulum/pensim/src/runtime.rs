@@ -12,6 +12,7 @@ use pendulum_lib::{
     },
     telemetry::TelemetrySender,
 };
+use uom::si::time::second;
 
 use crate::sim::{SimConfig, SimImu, SimMotor, SimPlant};
 
@@ -46,7 +47,7 @@ impl SimulationRuntime {
         let imu_sample = imu.read().expect("sim IMU should never fail");
 
         let mut world = World::new();
-        world.insert_resource(ControlClock::new(runtime.dt_s));
+        world.insert_resource(ControlClock::new(runtime.dt));
         world.insert_resource(ControllerResource::new(
             runtime.controller_kp,
             runtime.controller_kd,
@@ -54,15 +55,15 @@ impl SimulationRuntime {
         world.insert_resource(ImuReading { sample: imu_sample });
         world.insert_resource(MotorState::default());
         world.insert_resource(WheelAngleEstimate {
-            angle_rad: initial_state.wheel_angle,
+            angle: initial_state.wheel_angle,
         });
         world.insert_resource(TelemetryPublisher { sender: telemetry });
         world.insert_resource(SimPlantResource { plant });
         world.insert_resource(SimImuResource { imu });
         world.insert_resource(SimMotorResource {
             motor: SimMotor::new(
-                runtime.max_motor_torque_nm,
-                runtime.motor_no_load_speed_rad_s,
+                runtime.max_motor_torque,
+                runtime.motor_no_load_speed,
                 runtime.motor_torque_constant_nm_per_a,
             ),
         });
@@ -83,7 +84,7 @@ impl SimulationRuntime {
         Self {
             world,
             schedule,
-            step_dt: Duration::from_secs_f64(runtime.dt_s),
+            step_dt: Duration::from_secs_f64(runtime.dt.get::<second>()),
         }
     }
 }
@@ -119,7 +120,7 @@ fn sim_command_motor_system(
     mut motor_device: ResMut<'_, SimMotorResource>,
     mut motor_state: ResMut<'_, MotorState>,
 ) {
-    motor_state.command.observed_wheel_speed_rad_s = plant.plant.state().wheel_speed;
+    motor_state.command.observed_wheel_speed = plant.plant.state().wheel_speed;
     motor_state.telemetry = motor_device
         .motor
         .command(motor_state.command)
@@ -133,8 +134,8 @@ fn sim_step_plant_system(
     mut wheel_angle: ResMut<'_, WheelAngleEstimate>,
 ) {
     plant_resource.plant.step(
-        motor_state.telemetry.applied_torque_nm,
-        Duration::from_secs_f64(clock.dt_s),
+        motor_state.telemetry.applied_torque,
+        Duration::from_secs_f64(clock.dt.get::<second>()),
     );
-    wheel_angle.angle_rad = plant_resource.plant.state().wheel_angle;
+    wheel_angle.angle = plant_resource.plant.state().wheel_angle;
 }

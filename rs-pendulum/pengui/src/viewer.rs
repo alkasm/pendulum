@@ -4,7 +4,16 @@ use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use pendulum_lib::telemetry::{self, TelemetryFrame, TelemetryReceiver};
+use pendulum_lib::{
+    telemetry::{self, TelemetryFrame, TelemetryReceiver},
+};
+use uom::si::{
+    angle::radian,
+    angular_velocity::radian_per_second,
+    electric_current::ampere,
+    time::second,
+    torque::newton_meter,
+};
 
 use crate::config::VisualizationConfig;
 
@@ -26,15 +35,15 @@ struct VisualConfigResource {
 struct PendulumUiState {
     connected: bool,
     step: u64,
-    sim_time_s: f64,
+    sim_time: f64,
     theta: f64,
     theta_dot: f64,
     wheel_angle: f64,
     wheel_speed: f64,
-    commanded_torque_nm: f64,
-    torque_nm: f64,
-    available_torque_nm: f64,
-    phase_current_a: f64,
+    commanded_torque: f64,
+    torque: f64,
+    available_torque: f64,
+    phase_current: f64,
     speed_ratio: f64,
 }
 
@@ -43,15 +52,15 @@ impl Default for PendulumUiState {
         Self {
             connected: false,
             step: 0,
-            sim_time_s: 0.0,
+            sim_time: 0.0,
             theta: 0.0,
             theta_dot: 0.0,
             wheel_angle: 0.0,
             wheel_speed: 0.0,
-            commanded_torque_nm: 0.0,
-            torque_nm: 0.0,
-            available_torque_nm: 0.0,
-            phase_current_a: 0.0,
+            commanded_torque: 0.0,
+            torque: 0.0,
+            available_torque: 0.0,
+            phase_current: 0.0,
             speed_ratio: 0.0,
         }
     }
@@ -61,15 +70,15 @@ impl PendulumUiState {
     fn apply_frame(&mut self, frame: TelemetryFrame) {
         self.connected = true;
         self.step = frame.step;
-        self.sim_time_s = frame.sim_time_s;
-        self.theta = frame.theta_rad;
-        self.theta_dot = frame.theta_dot_rad_s;
-        self.wheel_angle = frame.wheel_angle_rad;
-        self.wheel_speed = frame.wheel_speed_rad_s;
-        self.commanded_torque_nm = frame.commanded_torque_nm;
-        self.torque_nm = frame.applied_torque_nm;
-        self.available_torque_nm = frame.available_torque_nm;
-        self.phase_current_a = frame.phase_current_a;
+        self.sim_time = frame.sim_time.get::<second>();
+        self.theta = frame.theta.get::<radian>();
+        self.theta_dot = frame.theta_dot.get::<radian_per_second>();
+        self.wheel_angle = frame.wheel_angle.get::<radian>();
+        self.wheel_speed = frame.wheel_speed.get::<radian_per_second>();
+        self.commanded_torque = frame.commanded_torque.get::<newton_meter>();
+        self.torque = frame.applied_torque.get::<newton_meter>();
+        self.available_torque = frame.available_torque.get::<newton_meter>();
+        self.phase_current = frame.phase_current.get::<ampere>();
         self.speed_ratio = frame.speed_ratio;
     }
 }
@@ -373,16 +382,16 @@ fn spawn_telemetry_row(parent: &mut ChildBuilder, label: &'static str, kind: Tel
 fn format_telemetry_value(kind: TelemetryValueKind, ui_state: &PendulumUiState) -> String {
     match kind {
         TelemetryValueKind::Step => ui_state.step.to_string(),
-        TelemetryValueKind::SimTime => format!("{:.2} s", ui_state.sim_time_s),
+        TelemetryValueKind::SimTime => format!("{:.2} s", ui_state.sim_time),
         TelemetryValueKind::ThetaRad => format!("{:+.3} rad", ui_state.theta),
         TelemetryValueKind::ThetaDeg => format!("{:+.1} deg", ui_state.theta.to_degrees()),
         TelemetryValueKind::ThetaDot => format!("{:+.3} rad/s", ui_state.theta_dot),
         TelemetryValueKind::WheelAngle => format!("{:+.3} rad", ui_state.wheel_angle),
         TelemetryValueKind::WheelSpeed => format!("{:+.2} rad/s", ui_state.wheel_speed),
-        TelemetryValueKind::CommandedTorque => format!("{:+.3} Nm", ui_state.commanded_torque_nm),
-        TelemetryValueKind::AppliedTorque => format!("{:+.3} Nm", ui_state.torque_nm),
-        TelemetryValueKind::AvailableTorque => format!("{:+.3} Nm", ui_state.available_torque_nm),
-        TelemetryValueKind::PhaseCurrent => format!("{:+.3} A", ui_state.phase_current_a),
+        TelemetryValueKind::CommandedTorque => format!("{:+.3} Nm", ui_state.commanded_torque),
+        TelemetryValueKind::AppliedTorque => format!("{:+.3} Nm", ui_state.torque),
+        TelemetryValueKind::AvailableTorque => format!("{:+.3} Nm", ui_state.available_torque),
+        TelemetryValueKind::PhaseCurrent => format!("{:+.3} A", ui_state.phase_current),
         TelemetryValueKind::SpeedRatio => format!("{:.3}", ui_state.speed_ratio),
     }
 }
