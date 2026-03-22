@@ -1,3 +1,4 @@
+mod config;
 mod viewer;
 
 use std::{
@@ -5,7 +6,9 @@ use std::{
     thread,
 };
 
-use pendulum_lib::{config::VisualizationConfig, transport};
+use pendulum_lib::transport;
+
+use crate::config::VisualizationConfig;
 
 fn main() {
     let addr = std::env::args()

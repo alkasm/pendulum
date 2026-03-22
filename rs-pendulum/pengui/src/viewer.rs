@@ -4,10 +4,9 @@ use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use pendulum_lib::{
-    config::VisualizationConfig,
-    telemetry::{self, TelemetryFrame, TelemetryReceiver},
-};
+use pendulum_lib::telemetry::{self, TelemetryFrame, TelemetryReceiver};
+
+use crate::config::VisualizationConfig;
 
 const MAX_VISUAL_TILT_RAD: f32 = std::f32::consts::FRAC_PI_4;
 const MOTOR_TEXTURE_SIZE_PX: u32 = 128;
