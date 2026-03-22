@@ -39,5 +39,5 @@ fn main() {
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
-    println!("pend is linux only")
+    println!("penfw is linux only")
 }

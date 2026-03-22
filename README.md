@@ -269,11 +269,11 @@ Exit criteria:
 
 If we want the software to follow the same sequence:
 
-1. add tiny bring-up binaries under `pend/src/bin`, starting with a boot-and-print test
+1. add tiny bring-up binaries under `penfw/src/bin`, starting with a boot-and-print test
 2. add a simple host-link test such as `serial_echo`
 3. add `hall_read`
 4. add `current_read`
 5. add `motor_open_loop`
 6. add `imu_read`
 7. add a combined telemetry binary
-8. enable the PD control loop in the main `pend` binary
+8. enable the PD control loop in the main `penfw` binary

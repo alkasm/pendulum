@@ -3457,24 +3457,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pend"
-version = "0.1.0"
-dependencies = [
- "bevy_ecs",
- "linux-embedded-hal",
- "mpu6050",
- "pendulum-lib",
-]
-
-[[package]]
-name = "pend-sim"
-version = "0.1.0"
-dependencies = [
- "bevy_ecs",
- "pendulum-lib",
-]
-
-[[package]]
 name = "pendulum-lib"
 version = "0.1.0"
 dependencies = [
@@ -3484,10 +3466,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "penfw"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
+ "linux-embedded-hal",
+ "mpu6050",
+ "pendulum-lib",
+]
+
+[[package]]
 name = "pengui"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "pendulum-lib",
+]
+
+[[package]]
+name = "pensim"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
  "pendulum-lib",
 ]
 

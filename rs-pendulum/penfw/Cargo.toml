@@ -1,8 +1,8 @@
 [package]
-name = "pend"
+name = "penfw"
 version = "0.1.0"
 edition = "2024"
-default-run = "pend"
+default-run = "penfw"
 
 [dependencies]
 bevy_ecs = "0.15"

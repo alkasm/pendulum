@@ -7,14 +7,14 @@ edition = "2024"
 members = [
     "pencat",
     "pengui",
-    "pend",
-    "pend-sim",
+    "penfw",
+    "pensim",
 ]
 default-members = [
     ".",
     "pencat",
     "pengui",
-    "pend-sim",
+    "pensim",
 ]
 resolver = "2"
 
