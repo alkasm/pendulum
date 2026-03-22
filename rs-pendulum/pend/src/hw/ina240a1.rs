@@ -20,8 +20,4 @@ impl Ina240A1 {
     pub fn read(&mut self) -> Ina240A1Sample {
         self.sample
     }
-
-    pub fn set_mock_phase_current_a(&mut self, phase_current_a: f64) {
-        self.sample.phase_current_a = phase_current_a;
-    }
 }

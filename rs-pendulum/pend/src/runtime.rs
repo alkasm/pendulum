@@ -44,7 +44,7 @@ impl HardwareRuntime {
         telemetry: TelemetrySender,
     ) -> Result<Self, HardwareRuntimeError> {
         let imu = Mpu6050Imu::new().map_err(HardwareRuntimeError::Imu)?;
-        let motor = SparkfunIotMotor::with_torque_constant(
+        let motor = SparkfunIotMotor::new(
             config.max_motor_torque_nm,
             config.motor_no_load_speed_rad_s,
             config.motor_torque_constant_nm_per_a,

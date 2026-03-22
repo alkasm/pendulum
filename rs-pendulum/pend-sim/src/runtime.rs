@@ -60,7 +60,7 @@ impl SimulationRuntime {
         world.insert_resource(SimPlantResource { plant });
         world.insert_resource(SimImuResource { imu });
         world.insert_resource(SimMotorResource {
-            motor: SimMotor::with_torque_constant(
+            motor: SimMotor::new(
                 runtime.max_motor_torque_nm,
                 runtime.motor_no_load_speed_rad_s,
                 runtime.motor_torque_constant_nm_per_a,

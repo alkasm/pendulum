@@ -20,8 +20,4 @@ impl Tmag5273 {
     pub fn read(&mut self) -> Tmag5273Sample {
         self.sample
     }
-
-    pub fn set_mock_wheel_speed_rad_s(&mut self, wheel_speed_rad_s: f64) {
-        self.sample.wheel_speed_rad_s = wheel_speed_rad_s;
-    }
 }

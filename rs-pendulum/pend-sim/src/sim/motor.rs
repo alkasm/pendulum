@@ -15,7 +15,7 @@ pub struct SimMotor {
 }
 
 impl SimMotor {
-    pub fn with_torque_constant(
+    pub fn new(
         max_torque_nm: f64,
         no_load_speed_rad_s: f64,
         torque_constant_nm_per_a: f64,
