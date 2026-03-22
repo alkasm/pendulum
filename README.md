@@ -116,3 +116,164 @@ With sensing + actuation included, each step is:
 5. step the plant ODE with input $\tau$.
 
 So the controlled system remains the same ODE framework, but now with a realistic measurement path and actuator saturation path.
+
+## hardware bring-up plan
+
+The safest way to start on real hardware is to bring the system up one interface at a time, from lowest risk to highest risk.
+
+For this SparkFun IoT Brushless Motor Driver board, the first wire to use is the onboard USB-C connection. SparkFun's guide says the USB connection is used for both programming and serial communication, so that should be the default host link for early bring-up. The board also exposes a primary I2C bus on `GPIO 21`/`GPIO 22`, shared by the onboard TMAG5273 hall sensor and the Qwiic connector, which is the natural path for the external IMU and other low-speed sensors.
+
+### stage 1: prove firmware loading works
+
+Goal: confirm we can reliably flash the ESP32 and reboot into our code.
+
+- connect only USB-C
+- build the smallest possible firmware that boots and stays alive
+- if needed, use `BOOT` plus `RST` to enter the ESP32 serial bootloader
+- repeat flashing more than once so we know it is not a one-off success
+
+Exit criteria:
+
+- firmware upload works repeatedly
+- the board reboots into the expected program every time
+
+### stage 2: prove code is visibly running
+
+Goal: confirm our program executes without fault and gives obvious signs of life.
+
+- blink or toggle the onboard status LED if we have access to it cleanly
+- also print a heartbeat over USB serial once per second
+- include a boot banner with firmware version and build timestamp or git hash
+
+Exit criteria:
+
+- visible LED behavior is stable
+- USB serial shows a clean heartbeat for a few minutes with no resets or garbage
+
+### stage 3: prove host communication works
+
+Goal: confirm we can move bytes between the ESP32 and the development machine.
+
+- use USB serial first (well documented), not an external UART wire
+- keep the protocol trivial at first: text lines or a tiny command byte parser
+- verify both directions:
+  - ESP32 -> host: heartbeat, counters, sensor dumps
+  - host -> ESP32: simple commands like `ping`, `led on`, `led off`
+
+Exit criteria:
+
+- host can receive logs reliably
+- ESP32 can receive and act on simple host commands
+
+### stage 4: read the onboard hall sensor
+
+Goal: verify the primary I2C bus is working and we can read the TMAG5273.
+
+- start by reading the hall sensor device ID or a known configuration register
+- then stream raw magnetic field or angle-related readings over USB serial
+- rotate the motor by hand and confirm the readings change smoothly
+
+Exit criteria:
+
+- device is detected on I2C every boot
+- hand rotation produces repeatable changing measurements
+
+### stage 5: read the onboard current sensor
+
+Goal: verify INA240A1 readings are sane before we depend on them.
+
+- first read with motor disabled and confirm the baseline is near zero
+- then command a very small bounded motor action and verify current changes in the expected direction and magnitude
+- treat this as a diagnostic signal first, not as a control input
+
+Exit criteria:
+
+- near-zero reading at idle
+- nonzero response when the motor is gently driven
+- no obviously saturated or stuck values
+
+### stage 6: move the motor open-loop
+
+Goal: prove we can command the TMC6300 path and get predictable motor motion.
+
+- start with the smallest useful open-loop command
+- use short bursts only
+- log hall sensor and current sensor data while commanding motion
+- verify spin direction, startup behavior, and whether the wheel coasts as expected
+
+Exit criteria:
+
+- wheel moves on command
+- direction matches the commanded sign convention
+- current and hall readings both react consistently
+
+### stage 7: read the external IMU
+
+Goal: verify the MPU is reachable on the same I2C bus and produces plausible data.
+
+- wire the IMU onto the board's primary I2C bus through Qwiic or the `SDA`/`SCL` pins
+- confirm voltage compatibility first; the board I/O is `3.3V` only
+- begin with WHOAMI or equivalent identity reads
+- then stream accel/gyro values over USB serial
+- tilt the pendulum by hand and check that gravity and rate readings make sense
+
+Exit criteria:
+
+- IMU is detected reliably
+- accel and gyro readings change in the expected axes and signs
+
+### stage 8: combine sensing without control
+
+Goal: verify that all measurements can run together at the intended loop rate.
+
+- sample hall, current, and IMU in one loop
+- timestamp the loop and print a compact telemetry line over USB serial
+- check for I2C contention, timing jitter, and resets
+
+Exit criteria:
+
+- stable multi-sensor loop
+- no missed devices or watchdog-like failures during extended runs
+
+### stage 9: command torque with the pendulum restrained
+
+Goal: validate sign conventions and scaling before any free-balance attempt.
+
+- physically restrain or support the pendulum
+- command tiny torques
+- verify:
+  - motor torque sign
+  - hall sensor sign
+  - IMU angle/rate sign
+  - controller sign assumptions
+
+Exit criteria:
+
+- every sign convention is confirmed experimentally
+
+### stage 10: closed-loop balancing trials
+
+Goal: move from open-loop hardware validation to controlled balancing.
+
+- begin with low gains and explicit torque limits
+- add a dead-man timeout or explicit stop command
+- keep telemetry streaming over USB serial during every run
+- only after short stable runs should we try untethered or longer balancing tests
+
+Exit criteria:
+
+- bounded, repeatable stabilization attempts
+- clear telemetry for every failure and success case
+
+### recommended implementation order in this repo
+
+If we want the software to follow the same sequence:
+
+1. add tiny bring-up binaries under `pend/src/bin`, starting with a boot-and-print test
+2. add a simple host-link test such as `serial_echo`
+3. add `hall_read`
+4. add `current_read`
+5. add `motor_open_loop`
+6. add `imu_read`
+7. add a combined telemetry binary
+8. enable the PD control loop in the main `pend` binary
