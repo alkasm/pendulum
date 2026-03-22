@@ -6,7 +6,7 @@ use pendulum_lib::{telemetry::TelemetryStream, transport};
 fn main() {
     let bind_addr = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| transport::DEFAULT_TELEMETRY_ADDR.to_string());
+        .unwrap_or_else(|| transport::DEFAULT_TELEMETRY_SOURCE_ADDR.to_string());
     let sim_config = sim::SimConfig::default();
     let telemetry = TelemetryStream::new();
 

@@ -8,6 +8,7 @@ use std::{
 use crate::telemetry::{self, TelemetryFrame, TelemetryReceiver, TelemetryStream};
 
 pub const DEFAULT_TELEMETRY_ADDR: &str = "127.0.0.1:7001";
+pub const DEFAULT_TELEMETRY_SOURCE_ADDR: &str = "127.0.0.1:7002";
 const TELEMETRY_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 pub fn spawn_tcp_telemetry_server(
