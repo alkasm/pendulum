@@ -287,14 +287,14 @@ The first firmware binary we have working for the ESP32 board is `blink` in `pen
 From the `penfw` crate directory:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 cargo build --release --bin blink
 ```
 
 That should produce the firmware ELF at:
 
 ```bash
-/Users/alkasm/prog/pendulum/rs-pendulum/target/xtensa-esp32-none-elf/release/blink
+target/xtensa-esp32-none-elf/release/blink
 ```
 
 ### one-time host setup
@@ -332,7 +332,7 @@ You are looking for a device that appears when the board is plugged in, often so
 If the board enumerates normally, try:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 . ~/export-esp.sh
 espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
 ```
@@ -359,7 +359,7 @@ SparkFun documents manual firmware download mode with the `BOOT` and `RST` butto
 So the manual recovery flow is:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 . ~/export-esp.sh
 espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
 ```
@@ -384,14 +384,14 @@ For this `blink` binary, success means:
 Rebuild:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 cargo build --release --bin blink
 ```
 
 Flash again:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 . ~/export-esp.sh
 espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
 ```
@@ -399,6 +399,6 @@ espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/relea
 If you only want to verify compilation and not flash:
 
 ```bash
-cd /Users/alkasm/prog/pendulum/rs-pendulum/penfw
+cd penfw
 cargo check --bin blink
 ```
