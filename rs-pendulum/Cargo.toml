@@ -5,15 +5,15 @@ edition = "2024"
 
 [workspace]
 members = [
-    "pencat",
     "pengui",
+    "penproxy",
     "penfw",
     "pensim",
 ]
 default-members = [
     ".",
-    "pencat",
     "pengui",
+    "penproxy",
     "pensim",
 ]
 resolver = "2"
@@ -26,4 +26,5 @@ path = "src/lib.rs"
 bevy_ecs = "0.15"
 postcard = { version = "1.1", features = ["alloc"] }
 serde = { version = "1.0", features = ["derive"] }
+serialport = "4.8"
 uom = { version = "0.38.0", default-features = false, features = ["autoconvert", "f64", "si", "serde"] }

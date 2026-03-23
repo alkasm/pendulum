@@ -9,6 +9,7 @@ use crate::telemetry::{self, TelemetryFrame, TelemetryReceiver, TelemetryStream}
 
 pub const DEFAULT_TELEMETRY_ADDR: &str = "127.0.0.1:7001";
 pub const DEFAULT_TELEMETRY_SOURCE_ADDR: &str = "127.0.0.1:7002";
+pub const DEFAULT_TELEMETRY_SERIAL_BAUD: u32 = 115_200;
 const TELEMETRY_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 pub fn spawn_tcp_telemetry_server(
@@ -36,19 +37,62 @@ pub fn spawn_tcp_telemetry_server(
 pub fn connect_tcp_telemetry(addr: &str) -> io::Result<TelemetryReceiver> {
     let stream = TcpStream::connect(addr)?;
     let _ = stream.set_nodelay(true);
-    let mut reader = BufReader::new(stream);
+    let reader = BufReader::new(stream);
+
+    spawn_telemetry_reader(reader, format!("tcp telemetry at {addr}"))
+}
+
+pub fn connect_serial_telemetry(port_name: &str, baud_rate: u32) -> io::Result<TelemetryReceiver> {
+    let port = serialport::new(port_name, baud_rate)
+        .timeout(Duration::from_millis(250))
+        .open()
+        .map_err(serial_error_to_io_error)?;
+    let reader = BufReader::new(port);
+
+    spawn_telemetry_reader(reader, format!("serial telemetry at {port_name} @ {baud_rate} baud"))
+}
+
+pub fn connect_serial_telemetry_blocking(port_name: &str, baud_rate: u32) -> TelemetryReceiver {
+    let mut announced_wait = false;
+
+    loop {
+        match connect_serial_telemetry(port_name, baud_rate) {
+            Ok(telemetry_rx) => {
+                if announced_wait {
+                    println!("Telemetry stream connected at {port_name} @ {baud_rate} baud");
+                }
+                return telemetry_rx;
+            }
+            Err(error) => {
+                if !announced_wait {
+                    println!("Waiting for telemetry stream at {port_name} @ {baud_rate} baud...");
+                    announced_wait = true;
+                }
+                println!(
+                    "Telemetry stream not ready at {port_name} @ {baud_rate} baud: {error}"
+                );
+                thread::sleep(TELEMETRY_CONNECT_RETRY_DELAY);
+            }
+        }
+    }
+}
+
+fn spawn_telemetry_reader<R>(reader: BufReader<R>, source_name: String) -> io::Result<TelemetryReceiver>
+where
+    R: io::Read + Send + 'static,
+{
+    let mut reader = reader;
 
     let telemetry = TelemetryStream::new();
     let sender = telemetry.publisher();
     let telemetry_rx = telemetry.subscribe();
-    let addr = addr.to_string();
 
     thread::spawn(move || {
         loop {
             match read_frame(&mut reader) {
                 Ok(frame) => sender.send(frame),
                 Err(error) => {
-                    println!("Telemetry connection to {addr} closed: {error}");
+                    println!("Telemetry connection to {source_name} closed: {error}");
                     break;
                 }
             }
@@ -126,4 +170,8 @@ where
 
 fn to_invalid_data_error(error: postcard::Error) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
+}
+
+fn serial_error_to_io_error(error: serialport::Error) -> io::Error {
+    io::Error::other(error)
 }
