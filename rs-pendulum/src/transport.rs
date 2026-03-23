@@ -11,6 +11,7 @@ pub const DEFAULT_TELEMETRY_ADDR: &str = "127.0.0.1:7001";
 pub const DEFAULT_TELEMETRY_SOURCE_ADDR: &str = "127.0.0.1:7002";
 pub const DEFAULT_TELEMETRY_SERIAL_BAUD: u32 = 115_200;
 const TELEMETRY_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(500);
+const SERIAL_PORT_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub fn spawn_tcp_telemetry_server(
     bind_addr: impl Into<String>,
@@ -44,12 +45,15 @@ pub fn connect_tcp_telemetry(addr: &str) -> io::Result<TelemetryReceiver> {
 
 pub fn connect_serial_telemetry(port_name: &str, baud_rate: u32) -> io::Result<TelemetryReceiver> {
     let port = serialport::new(port_name, baud_rate)
-        .timeout(Duration::from_millis(250))
+        .timeout(SERIAL_PORT_CONNECT_TIMEOUT)
         .open()
         .map_err(serial_error_to_io_error)?;
     let reader = BufReader::new(port);
 
-    spawn_telemetry_reader(reader, format!("serial telemetry at {port_name} @ {baud_rate} baud"))
+    spawn_telemetry_reader(
+        reader,
+        format!("serial telemetry at {port_name} @ {baud_rate} baud"),
+    )
 }
 
 pub fn connect_serial_telemetry_blocking(port_name: &str, baud_rate: u32) -> TelemetryReceiver {
@@ -68,16 +72,17 @@ pub fn connect_serial_telemetry_blocking(port_name: &str, baud_rate: u32) -> Tel
                     println!("Waiting for telemetry stream at {port_name} @ {baud_rate} baud...");
                     announced_wait = true;
                 }
-                println!(
-                    "Telemetry stream not ready at {port_name} @ {baud_rate} baud: {error}"
-                );
+                println!("Telemetry stream not ready at {port_name} @ {baud_rate} baud: {error}");
                 thread::sleep(TELEMETRY_CONNECT_RETRY_DELAY);
             }
         }
     }
 }
 
-fn spawn_telemetry_reader<R>(reader: BufReader<R>, source_name: String) -> io::Result<TelemetryReceiver>
+fn spawn_telemetry_reader<R>(
+    reader: BufReader<R>,
+    source_name: String,
+) -> io::Result<TelemetryReceiver>
 where
     R: io::Read + Send + 'static,
 {
