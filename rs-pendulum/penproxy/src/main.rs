@@ -49,7 +49,6 @@ fn main() {
     };
     let telemetry = TelemetryStream::new();
     let sender = telemetry.publisher();
-    let _keepalive = sender.clone();
 
     transport::spawn_tcp_telemetry_server(bind_addr.clone(), telemetry.clone()).unwrap_or_else(
         |error| panic!("Failed to bind proxy telemetry server on {bind_addr}: {error}"),
