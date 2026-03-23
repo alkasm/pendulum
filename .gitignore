@@ -9,5 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-rs-pendulum/target/
+target/
 .vscode/
