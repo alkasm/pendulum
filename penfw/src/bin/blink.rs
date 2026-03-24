@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+esp_bootloader_esp_idf::esp_app_desc!();
+
 use esp_hal::{
     clock::CpuClock,
     main,

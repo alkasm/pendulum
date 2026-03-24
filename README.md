@@ -334,7 +334,7 @@ If the board enumerates normally, try:
 ```bash
 cd penfw
 . ~/export-esp.sh
-espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
 ```
 
 Replace `/dev/cu.YOUR_PORT` with the actual port you found.
@@ -361,7 +361,7 @@ So the manual recovery flow is:
 ```bash
 cd penfw
 . ~/export-esp.sh
-espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
 ```
 
 If it fails to connect:
@@ -393,7 +393,7 @@ Flash again:
 ```bash
 cd penfw
 . ~/export-esp.sh
-espflash flash --monitor /dev/cu.YOUR_PORT ../target/xtensa-esp32-none-elf/release/blink
+espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
 ```
 
 If you only want to verify compilation and not flash:
