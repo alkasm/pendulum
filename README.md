@@ -123,6 +123,12 @@ The safest way to start on real hardware is to bring the system up one interface
 
 For this SparkFun IoT Brushless Motor Driver board, the first wire to use is the onboard USB-C connection. SparkFun's guide says the USB connection is used for both programming and serial communication, so that should be the default host link for early bring-up. The board also exposes a primary I2C bus on `GPIO 21`/`GPIO 22`, shared by the onboard TMAG5273 hall sensor and the Qwiic connector, which is the natural path for the external IMU and other low-speed sensors.
 
+There is a documented address discrepancy around the onboard TMAG5273. SparkFun's IoT Motor Driver hardware guide lists the TMAG5273 I2C address as `0x35` in its hardware overview, while SparkFun's TMAG5273 Arduino library docs describe the sensor's configurable I2C address with a default value of `0x22`. In bring-up on this board, an I2C scan found a stable responder at `0x22` and nothing at `0x35`, so the firmware examples use `0x22` as the expected hall-sensor address.
+
+Sources:
+- SparkFun IoT Brushless Motor Driver hardware guide: https://docs.sparkfun.com/SparkFun_IoT_Brushless_Motor_Driver/hardware_overview/
+- SparkFun TMAG5273 Arduino library docs: https://docs.sparkfun.com/SparkFun_TMAG5273_Arduino_Library/
+
 ### stage 1: prove firmware loading works
 
 Goal: confirm we can reliably flash the ESP32 and reboot into our code.

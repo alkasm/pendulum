@@ -12,7 +12,7 @@ use esp_hal::{
     uart::{Config as UartConfig, Uart},
 };
 
-pub const HALL_SENSOR_ADDR: u8 = 0x35;
+pub const HALL_SENSOR_ADDR: u8 = 0x22;
 pub const MPU6050_ADDR_PRIMARY: u8 = 0x68;
 pub const MPU6050_ADDR_ALTERNATE: u8 = 0x69;
 pub const MPU6050_WHO_AM_I_REG: u8 = 0x75;
