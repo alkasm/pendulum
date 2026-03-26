@@ -3,19 +3,16 @@
 use core::fmt::Write;
 
 use esp_hal::{
-    Blocking,
     clock::CpuClock,
     delay::Delay,
     i2c::master::{Config as I2cConfig, I2c},
     peripherals,
     time::Rate,
     uart::{Config as UartConfig, Uart},
+    Blocking,
 };
 
 pub const HALL_SENSOR_ADDR: u8 = 0x22;
-pub const MPU6050_ADDR_PRIMARY: u8 = 0x68;
-pub const MPU6050_ADDR_ALTERNATE: u8 = 0x69;
-pub const MPU6050_WHO_AM_I_REG: u8 = 0x75;
 
 pub fn max_clock_config() -> esp_hal::Config {
     esp_hal::Config::default().with_cpu_clock(CpuClock::max())
@@ -37,10 +34,13 @@ pub fn init_primary_i2c<'d>(
     sda: peripherals::GPIO21<'d>,
     scl: peripherals::GPIO22<'d>,
 ) -> I2c<'d, Blocking> {
-    I2c::new(i2c0, I2cConfig::default().with_frequency(Rate::from_khz(100)))
-        .expect("I2C0 init failed")
-        .with_sda(sda)
-        .with_scl(scl)
+    I2c::new(
+        i2c0,
+        I2cConfig::default().with_frequency(Rate::from_khz(100)),
+    )
+    .expect("I2C0 init failed")
+    .with_sda(sda)
+    .with_scl(scl)
 }
 
 pub fn init_delay() -> Delay {
