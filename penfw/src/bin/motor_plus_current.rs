@@ -85,7 +85,11 @@ fn main() -> ! {
             "step={} pattern={} diag={} mcp6021={:>4} ({:+5}) ina_u={:>4} ({:+5}) ina_v={:>4} ({:+5}) ina_w={:>4} ({:+5})\r",
             step_index,
             step.name,
-            if board.motor_driver.diag_is_high() { "high" } else { "low" },
+            if board.motor_driver.diag_is_high() {
+                "high"
+            } else {
+                "low"
+            },
             sample.mcp6021.counts,
             sample.mcp6021.delta_counts,
             sample.ina_u.counts,

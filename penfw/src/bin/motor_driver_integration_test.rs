@@ -10,7 +10,7 @@ mod hw;
 
 use core::fmt::Write;
 
-use bringup::{init_console, init_delay, max_clock_config, write_line, HALL_SENSOR_ADDR};
+use bringup::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, write_line};
 use esp_hal::main;
 use hw::{MotorDriverBoard, SIX_STEP_COMMUTATION};
 
@@ -133,7 +133,11 @@ fn main() -> ! {
                     "step={} pattern={} diag={} mcp6021={:>4} ({:+5}, {:>4.2}V) ina_u={:>4} ({:+5}, {:+5.2}A) ina_v={:>4} ({:+5}, {:+5.2}A) ina_w={:>4} ({:+5}, {:+5.2}A) hall_t={:>5.1}C hall_x={:+7.2}mT hall_y={:+7.2}mT hall_z={:+7.2}mT angle={:>7.2}deg d_angle={:+6.2}deg mag=0x{:02X} conv=set{}{}{}{} dev={}{}{}{}{}\r\n",
                     step_index,
                     step.name,
-                    if board.motor_driver.diag_is_high() { "high" } else { "low" },
+                    if board.motor_driver.diag_is_high() {
+                        "high"
+                    } else {
+                        "low"
+                    },
                     current.mcp6021.counts,
                     current.mcp6021.delta_counts,
                     current.mcp6021.volts,
@@ -154,14 +158,46 @@ fn main() -> ! {
                     angle_delta_deg,
                     measurement.magnitude,
                     measurement.conv_status.set_count,
-                    if measurement.conv_status.result_ready { " ready" } else { "" },
-                    if measurement.conv_status.por { " por" } else { "" },
-                    if measurement.conv_status.diag_fail { " diag" } else { "" },
-                    if measurement.device_status.int_pin_high { " int_high" } else { " int_low" },
-                    if measurement.device_status.oscillator_error { " osc" } else { "" },
-                    if measurement.device_status.int_pin_error { " int_err" } else { "" },
-                    if measurement.device_status.otp_crc_error { " otp_crc" } else { "" },
-                    if measurement.device_status.vcc_uv_error { " uv" } else { "" },
+                    if measurement.conv_status.result_ready {
+                        " ready"
+                    } else {
+                        ""
+                    },
+                    if measurement.conv_status.por {
+                        " por"
+                    } else {
+                        ""
+                    },
+                    if measurement.conv_status.diag_fail {
+                        " diag"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.int_pin_high {
+                        " int_high"
+                    } else {
+                        " int_low"
+                    },
+                    if measurement.device_status.oscillator_error {
+                        " osc"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.int_pin_error {
+                        " int_err"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.otp_crc_error {
+                        " otp_crc"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.vcc_uv_error {
+                        " uv"
+                    } else {
+                        ""
+                    },
                 );
                 let _ = serial.flush();
             }
@@ -171,7 +207,11 @@ fn main() -> ! {
                     "step={} pattern={} diag={} mcp6021={:>4} ({:+5}) ina_u={:>4} ({:+5}) ina_v={:>4} ({:+5}) ina_w={:>4} ({:+5}) hall_read_error=0x{register:02X}\r",
                     step_index,
                     step.name,
-                    if board.motor_driver.diag_is_high() { "high" } else { "low" },
+                    if board.motor_driver.diag_is_high() {
+                        "high"
+                    } else {
+                        "low"
+                    },
                     current.mcp6021.counts,
                     current.mcp6021.delta_counts,
                     current.ina_u.counts,

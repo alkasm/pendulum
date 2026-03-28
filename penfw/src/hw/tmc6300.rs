@@ -1,6 +1,6 @@
 use esp_hal::{
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
-    peripherals::{GPIO16, GPIO17, GPIO18, GPIO19, GPIO23, GPIO33, GPIO34, GPIO5},
+    peripherals::{GPIO5, GPIO16, GPIO17, GPIO18, GPIO19, GPIO23, GPIO33, GPIO34},
 };
 
 #[derive(Clone, Copy)]

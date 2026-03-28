@@ -12,7 +12,7 @@ use core::fmt::Write;
 
 use bringup::{init_console, init_delay, max_clock_config, write_line};
 use esp_hal::main;
-use hw::{GY521_DEFAULT_I2C_ADDR, Gy521Imu};
+use hw::{GY521_DEFAULT_I2C_ADDR, Gy521Error, Gy521Imu};
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -24,16 +24,20 @@ fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
     let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
-    let mut imu = match Gy521Imu::new(
-        peripherals.I2C0,
-        peripherals.GPIO21,
-        peripherals.GPIO22,
-    ) {
+    let mut imu = match Gy521Imu::new(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22) {
         Ok(imu) => imu,
-        Err(_) => loop {
+        Err(Gy521Error::RegisterRead(register)) => loop {
             let _ = writeln!(
                 serial,
-                "no response from default GY-521 address 0x{GY521_DEFAULT_I2C_ADDR:02X}\r"
+                "failed to read MPU-6050 register 0x{register:02X} at address 0x{GY521_DEFAULT_I2C_ADDR:02X}\r"
+            );
+            let _ = serial.flush();
+            delay.delay_millis(1_000);
+        },
+        Err(Gy521Error::UnexpectedWhoAmI(who_am_i)) => loop {
+            let _ = writeln!(
+                serial,
+                "unexpected WHO_AM_I 0x{who_am_i:02X} at address 0x{GY521_DEFAULT_I2C_ADDR:02X}\r"
             );
             let _ = serial.flush();
             delay.delay_millis(1_000);

@@ -1,8 +1,8 @@
 use esp_hal::{
+    Blocking,
     i2c::master::{Config as I2cConfig, I2c},
     peripherals::{GPIO21, GPIO22, I2C0},
     time::Rate,
-    Blocking,
 };
 
 const TMAG5273_REG_DEVICE_CONFIG_1: u8 = 0x00;

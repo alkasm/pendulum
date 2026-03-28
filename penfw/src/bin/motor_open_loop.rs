@@ -64,7 +64,11 @@ fn main() -> ! {
             "step={} pattern={} diag={}\r",
             step_index,
             step.name,
-            if board.motor_driver.diag_is_high() { "high" } else { "low" }
+            if board.motor_driver.diag_is_high() {
+                "high"
+            } else {
+                "low"
+            }
         );
         let _ = serial.flush();
         delay.delay_millis(500);

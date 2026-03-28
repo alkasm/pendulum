@@ -1,10 +1,10 @@
 use libm::atan2f;
 
 use esp_hal::{
+    Blocking,
     i2c::master::{Config as I2cConfig, I2c},
     peripherals::{GPIO21, GPIO22, I2C0},
     time::Rate,
-    Blocking,
 };
 
 const MPU_REG_ACCEL_XOUT_H: u8 = 0x3B;
@@ -14,7 +14,6 @@ const MPU_REG_WHO_AM_I: u8 = 0x75;
 pub const GY521_DEFAULT_I2C_ADDR: u8 = 0x68;
 
 const MPU6050_WHO_AM_I_VALUE: u8 = 0x68;
-const MPU6500_WHO_AM_I_VALUE: u8 = 0x70;
 
 const ACCEL_LSB_PER_G: f32 = 16_384.0;
 const GYRO_LSB_PER_DPS: f32 = 131.0;
@@ -22,28 +21,12 @@ const GYRO_LSB_PER_DPS: f32 = 131.0;
 pub struct Gy521Imu<'d> {
     i2c: I2c<'d, Blocking>,
     address: u8,
-    chip: MpuChip,
-}
-
-#[derive(Clone, Copy)]
-enum MpuChip {
-    Mpu6050,
-    Mpu6500,
 }
 
 #[derive(Clone, Copy)]
 pub enum Gy521Error {
     RegisterRead(u8),
-    UnsupportedChipWhoAmI(u8),
-}
-
-impl MpuChip {
-    fn temperature_c(self, raw_temp: i16) -> f32 {
-        match self {
-            Self::Mpu6050 => raw_temp as f32 / 340.0 + 36.53,
-            Self::Mpu6500 => raw_temp as f32 / 333.87 + 21.0,
-        }
-    }
+    UnexpectedWhoAmI(u8),
 }
 
 #[derive(Clone, Copy)]
@@ -76,8 +59,14 @@ impl<'d> Gy521Imu<'d> {
         .expect("I2C0 init failed")
         .with_sda(sda)
         .with_scl(scl);
-        let chip = read_detected_chip(&mut i2c, address)?;
-        Ok(Self { i2c, address, chip })
+        let mut who_am_i = [0_u8; 1];
+        i2c.write_read(address, &[MPU_REG_WHO_AM_I], &mut who_am_i)
+            .map_err(|_| Gy521Error::RegisterRead(MPU_REG_WHO_AM_I))?;
+        if who_am_i[0] != MPU6050_WHO_AM_I_VALUE {
+            return Err(Gy521Error::UnexpectedWhoAmI(who_am_i[0]));
+        }
+
+        Ok(Self { i2c, address })
     }
 
     pub fn wake(&mut self) -> Result<(), u8> {
@@ -106,7 +95,7 @@ impl<'d> Gy521Imu<'d> {
         let gx_dps = gx_raw as f32 / GYRO_LSB_PER_DPS;
         let gy_dps = gy_raw as f32 / GYRO_LSB_PER_DPS;
         let gz_dps = gz_raw as f32 / GYRO_LSB_PER_DPS;
-        let temperature_c = self.chip.temperature_c(temp_raw);
+        let temperature_c = temp_raw as f32 / 340.0 + 36.53;
         let theta_rad = atan2f(ax_g, az_g);
         let theta_deg = theta_rad * (180.0 / core::f32::consts::PI);
 
@@ -120,17 +109,5 @@ impl<'d> Gy521Imu<'d> {
             temperature_c,
             theta_deg,
         })
-    }
-}
-
-fn read_detected_chip(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<MpuChip, Gy521Error> {
-    let mut who_am_i = [0_u8; 1];
-    i2c.write_read(address, &[MPU_REG_WHO_AM_I], &mut who_am_i)
-        .map_err(|_| Gy521Error::RegisterRead(MPU_REG_WHO_AM_I))?;
-
-    match who_am_i[0] {
-        MPU6050_WHO_AM_I_VALUE => Ok(MpuChip::Mpu6050),
-        MPU6500_WHO_AM_I_VALUE => Ok(MpuChip::Mpu6500),
-        unknown => Err(Gy521Error::UnsupportedChipWhoAmI(unknown)),
     }
 }

@@ -25,22 +25,22 @@ fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
     let rmt = Rmt::new(peripherals.RMT, Rate::from_mhz(80)).unwrap();
-    let mut led = RmtSmartLeds::<
-        { buffer_size::<RGB8>(1) },
-        _,
-        RGB8,
-        color_order::Grb,
-        Ws2812Timing,
-    >::new(rmt.channel0, peripherals.GPIO2)
-    .unwrap();
+    let mut led =
+        RmtSmartLeds::<{ buffer_size::<RGB8>(1) }, _, RGB8, color_order::Grb, Ws2812Timing>::new(
+            rmt.channel0,
+            peripherals.GPIO2,
+        )
+        .unwrap();
 
     loop {
-        let _ = led.write([RGB8 {
-            r: LED_BRIGHTNESS,
-            g: 0,
-            b: 0,
-        }]
-        .into_iter());
+        let _ = led.write(
+            [RGB8 {
+                r: LED_BRIGHTNESS,
+                g: 0,
+                b: 0,
+            }]
+            .into_iter(),
+        );
         busy_wait_ms(BLINK_PERIOD_MS);
 
         let _ = led.write([RGB8::default()].into_iter());

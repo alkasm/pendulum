@@ -1,12 +1,12 @@
 use esp_hal::peripherals::{
-    ADC1, GPIO16, GPIO17, GPIO18, GPIO19, GPIO21, GPIO22, GPIO23, GPIO32, GPIO33, GPIO34, GPIO35,
-    GPIO36, GPIO39, GPIO5, I2C0,
+    ADC1, GPIO5, GPIO16, GPIO17, GPIO18, GPIO19, GPIO21, GPIO22, GPIO23, GPIO32, GPIO33, GPIO34,
+    GPIO35, GPIO36, GPIO39, I2C0,
 };
 
 use super::{
     current_sensor::CurrentSensor,
     tmag5273::Tmag5273,
-    tmc6300::{CommutationStep, Tmc6300, SIX_STEP_COMMUTATION},
+    tmc6300::{CommutationStep, SIX_STEP_COMMUTATION, Tmc6300},
 };
 
 pub struct MotorDriverBoard<'d> {

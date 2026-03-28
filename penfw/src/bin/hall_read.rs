@@ -32,7 +32,10 @@ fn main() -> ! {
     );
 
     write_line(&mut serial, "hall_read ready");
-    write_line(&mut serial, "scanning primary I2C bus on GPIO21/22 for TMAG5273 at 0x22");
+    write_line(
+        &mut serial,
+        "scanning primary I2C bus on GPIO21/22 for TMAG5273 at 0x22",
+    );
 
     loop {
         if hall.is_present() {
@@ -41,9 +44,7 @@ fn main() -> ! {
                 let _ = writeln!(
                     serial,
                     "id addr=0x{:02X} device_id=0x{:02X} manufacturer=0x{:04X}\r",
-                    identity.address,
-                    identity.device_id,
-                    identity.manufacturer_id
+                    identity.address, identity.device_id, identity.manufacturer_id
                 );
                 let _ = serial.flush();
             }
@@ -84,14 +85,46 @@ fn main() -> ! {
                     measurement.angle_deg,
                     measurement.magnitude,
                     measurement.conv_status.set_count,
-                    if measurement.conv_status.result_ready { " ready" } else { "" },
-                    if measurement.conv_status.por { " por" } else { "" },
-                    if measurement.conv_status.diag_fail { " diag" } else { "" },
-                    if measurement.device_status.int_pin_high { " int_high" } else { " int_low" },
-                    if measurement.device_status.oscillator_error { " osc" } else { "" },
-                    if measurement.device_status.int_pin_error { " int_err" } else { "" },
-                    if measurement.device_status.otp_crc_error { " otp_crc" } else { "" },
-                    if measurement.device_status.vcc_uv_error { " uv" } else { "" },
+                    if measurement.conv_status.result_ready {
+                        " ready"
+                    } else {
+                        ""
+                    },
+                    if measurement.conv_status.por {
+                        " por"
+                    } else {
+                        ""
+                    },
+                    if measurement.conv_status.diag_fail {
+                        " diag"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.int_pin_high {
+                        " int_high"
+                    } else {
+                        " int_low"
+                    },
+                    if measurement.device_status.oscillator_error {
+                        " osc"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.int_pin_error {
+                        " int_err"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.otp_crc_error {
+                        " otp_crc"
+                    } else {
+                        ""
+                    },
+                    if measurement.device_status.vcc_uv_error {
+                        " uv"
+                    } else {
+                        ""
+                    },
                 );
                 let _ = serial.flush();
             }
