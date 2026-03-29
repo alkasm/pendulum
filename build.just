@@ -24,8 +24,11 @@ hall_read:
 imu_read:
     {{ firmware-build }} imu_read
 
-motor_integration_test:
-    {{ firmware-build }} motor_integration_test
+sensor_telemetry:
+    {{ firmware-build }} sensor_telemetry
+
+motor_board_test:
+    {{ firmware-build }} motor_board_test
 
 motor_open_loop:
     {{ firmware-build }} motor_open_loop

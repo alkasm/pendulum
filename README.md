@@ -233,7 +233,7 @@ Exit criteria:
 Goal: verify that all measurements can run together at the intended loop rate.
 
 - sample hall, current, and IMU in one loop
-- timestamp the loop and print a compact telemetry line over USB serial
+- emit structured telemetry packets over USB serial
 - check for I2C contention, timing jitter, and resets
 
 Exit criteria:
@@ -281,7 +281,7 @@ If we want the software to follow the same sequence:
 4. add `current_read`
 5. add `motor_open_loop`
 6. add `imu_read`
-7. add a combined telemetry binary
+7. add `sensor_telemetry` as the combined telemetry binary
 8. enable the PD control loop in the main `penfw` binary
 
 ## flashing penfw
@@ -396,12 +396,27 @@ Check compilation without flashing:
 cd penfw && cargo check --release --bin blink
 ```
 
-Build and flash any other binary (e.g., `serial_echo`, `hall_read`, `imu_read`):
+Build and flash any other binary (e.g., `serial_echo`, `hall_read`, `imu_read`, `sensor_telemetry`):
 
 ```bash
 just serial_echo
 just flash serial_echo
 ```
+
+For the combined sensor stream:
+
+```bash
+just sensor_telemetry
+just flash sensor_telemetry
+```
+
+To decode the binary sensor telemetry stream into JSON on the host:
+
+```bash
+cargo run -p penproxy -- serial --port /dev/cu.YOUR_PORT
+```
+
+That mode reads the unified COBS-framed postcard telemetry protocol from the serial port. Runtime packets can still be proxied onward; sensor packets are printed as JSON.
 
 See all available build and flash targets:
 

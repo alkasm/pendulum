@@ -4218,6 +4218,7 @@ name = "pendulum-lib"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
+ "penproto",
  "postcard",
  "serde",
  "serialport",
@@ -4236,6 +4237,8 @@ dependencies = [
  "linux-embedded-hal",
  "mpu6050",
  "pendulum-lib",
+ "penproto",
+ "postcard",
  "smart-leds",
  "uom",
 ]
@@ -4250,12 +4253,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "penproto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "uom",
+]
+
+[[package]]
 name = "penproxy"
 version = "0.1.0"
 dependencies = [
  "clap",
  "pendulum-lib",
+ "penproto",
+ "postcard",
  "serde_json",
+ "serialport",
 ]
 
 [[package]]

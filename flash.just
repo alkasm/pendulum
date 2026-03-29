@@ -15,8 +15,11 @@ hall_read:
 imu_read:
     espflash flash --monitor {{ firmware-dir }}/imu_read
 
-motor_integration_test:
-    espflash flash --monitor {{ firmware-dir }}/motor_integration_test
+sensor_telemetry:
+    espflash flash --monitor {{ firmware-dir }}/sensor_telemetry
+
+motor_board_test:
+    espflash flash --monitor {{ firmware-dir }}/motor_board_test
 
 motor_open_loop:
     espflash flash --monitor {{ firmware-dir }}/motor_open_loop

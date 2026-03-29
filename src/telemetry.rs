@@ -1,22 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex};
 
-use serde::{Deserialize, Serialize};
-use uom::si::f64::{Angle, AngularVelocity, ElectricCurrent, Time, Torque};
-
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct TelemetryFrame {
-    pub step: u64,
-    pub sim_time: Time,
-    pub theta: Angle,
-    pub theta_dot: AngularVelocity,
-    pub wheel_angle: Angle,
-    pub wheel_speed: AngularVelocity,
-    pub commanded_torque: Torque,
-    pub applied_torque: Torque,
-    pub available_torque: Torque,
-    pub speed_ratio: f64,
-    pub phase_current: ElectricCurrent,
-}
+pub use penproto::RuntimeTelemetryFrame as TelemetryFrame;
 
 #[derive(Clone)]
 pub struct TelemetryStream {

@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use penproto::TelemetryPacket;
+
 use crate::telemetry::{self, TelemetryFrame, TelemetryReceiver, TelemetryStream};
 
 pub const DEFAULT_TELEMETRY_ADDR: &str = "127.0.0.1:7001";
@@ -145,11 +147,25 @@ fn write_frame<W>(writer: &mut W, frame: &TelemetryFrame) -> io::Result<()>
 where
     W: Write,
 {
-    let encoded = postcard::to_allocvec_cobs(frame).map_err(to_invalid_data_error)?;
+    let packet = TelemetryPacket::Runtime(*frame);
+    let encoded = postcard::to_allocvec_cobs(&packet).map_err(to_invalid_data_error)?;
     writer.write_all(&encoded)
 }
 
 fn read_frame<R>(reader: &mut R) -> io::Result<TelemetryFrame>
+where
+    R: BufRead,
+{
+    match read_packet(reader)? {
+        TelemetryPacket::Runtime(frame) => Ok(frame),
+        TelemetryPacket::Sensor(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "received sensor telemetry on runtime telemetry channel",
+        )),
+    }
+}
+
+pub fn read_packet<R>(reader: &mut R) -> io::Result<TelemetryPacket>
 where
     R: BufRead,
 {

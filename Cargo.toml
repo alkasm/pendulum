@@ -4,18 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = [
-    "pengui",
-    "penproxy",
-    "penfw",
-    "pensim",
-]
-default-members = [
-    ".",
-    "pengui",
-    "penproxy",
-    "pensim",
-]
+members = ["penproto", "pengui", "penproxy", "penfw", "pensim"]
+default-members = [".", "pengui", "penproxy", "pensim"]
 resolver = "2"
 
 [lib]
@@ -24,7 +14,13 @@ path = "src/lib.rs"
 
 [dependencies]
 bevy_ecs = "0.15"
+penproto = { path = "penproto" }
 postcard = { version = "1.1", features = ["alloc"] }
 serde = { version = "1.0", features = ["derive"] }
 serialport = "4.8"
-uom = { version = "0.38.0", default-features = false, features = ["autoconvert", "f64", "si", "serde"] }
+uom = { version = "0.38.0", default-features = false, features = [
+    "autoconvert",
+    "f64",
+    "si",
+    "serde",
+] }

@@ -48,7 +48,7 @@ fn main() -> ! {
         peripherals.GPIO33,
     );
 
-    write_line(&mut serial, "motor_driver_integration_test ready");
+    write_line(&mut serial, "motor_board_test ready");
     write_line(
         &mut serial,
         "sampling current ADC counts: MCP6021=GPIO32, INA240 U=GPIO35, V=GPIO36, W=GPIO39",
