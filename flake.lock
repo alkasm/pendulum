@@ -1,0 +1,123 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1774610258,
+        "narHash": "sha256-HaThtroVD9wRdx7KQk0B75JmFcXlMUoEdDFNOMOlsOs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "832efc09b4caf6b4569fbf9dc01bec3082a00611",
+        "type": "github"
+      },
+      "original": {
+        "id": "nixpkgs",
+        "type": "indirect"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "rust-src": "rust-src",
+        "xtensa-gcc-aarch64-darwin": "xtensa-gcc-aarch64-darwin",
+        "xtensa-gcc-aarch64-linux": "xtensa-gcc-aarch64-linux",
+        "xtensa-gcc-x86_64-linux": "xtensa-gcc-x86_64-linux",
+        "xtensa-rust-aarch64-darwin": "xtensa-rust-aarch64-darwin",
+        "xtensa-rust-aarch64-linux": "xtensa-rust-aarch64-linux",
+        "xtensa-rust-x86_64-linux": "xtensa-rust-x86_64-linux"
+      }
+    },
+    "rust-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1768913655,
+        "narHash": "sha256-upKiKRDvubE8obME4OVewTr6PjS/p0QOqjpQfEWBfE0=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-src-1.93.0.0.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-src-1.93.0.0.tar.xz"
+      }
+    },
+    "xtensa-gcc-aarch64-darwin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1758367235,
+        "narHash": "sha256-O0gXFHa127y5hzwRJeXcvs3ZtF2eK93YJcwut9P9gok=",
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-aarch64-apple-darwin.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-aarch64-apple-darwin.tar.xz"
+      }
+    },
+    "xtensa-gcc-aarch64-linux": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1758365362,
+        "narHash": "sha256-SL3wIxnkcYJw04A9J1GTmpLvlE1iby5HdtLYmFwRaps=",
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-aarch64-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-aarch64-linux-gnu.tar.xz"
+      }
+    },
+    "xtensa-gcc-x86_64-linux": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1758366056,
+        "narHash": "sha256-TMjkfwsm9xwPYIowTrOgU+/Cst5uKV0xJH8sbxcTIlc=",
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-x86_64-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20250920/xtensa-esp-elf-15.2.0_20250920-x86_64-linux-gnu.tar.xz"
+      }
+    },
+    "xtensa-rust-aarch64-darwin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1769515268,
+        "narHash": "sha256-r28XuKyh5pAXeW7gblSzGDcIXc2EPHj1C9+UwKbL6UY=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-aarch64-apple-darwin.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-aarch64-apple-darwin.tar.xz"
+      }
+    },
+    "xtensa-rust-aarch64-linux": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1769515268,
+        "narHash": "sha256-QdQNRBW3/0GRYZelGPsRzW/K3gP8chlV57b2lqysz4Q=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-aarch64-unknown-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-aarch64-unknown-linux-gnu.tar.xz"
+      }
+    },
+    "xtensa-rust-x86_64-linux": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1769515268,
+        "narHash": "sha256-837shgsDonrmUqZsIhUoR+93IR8tUat67PiHfShilJc=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-x86_64-unknown-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.93.0.0/rust-1.93.0.0-x86_64-unknown-linux-gnu.tar.xz"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

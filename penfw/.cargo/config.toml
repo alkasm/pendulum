@@ -8,7 +8,7 @@ build-std = ["core"]
 linker = "ldproxy"
 rustflags = [
     "-C",
-    "link-arg=--ldproxy-linker=/Users/alkasm/.rustup/toolchains/esp/xtensa-esp-elf/esp-15.2.0_20250920/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
+    "link-arg=--ldproxy-linker=xtensa-esp32-elf-gcc",
     "-C",
     "link-arg=-Tlinkall.x",
 ]

@@ -290,32 +290,29 @@ The first firmware binary we have working for the ESP32 board is `blink` in `pen
 
 ### build the firmware
 
-From the `penfw` crate directory:
+From the repo root, use `just` to build any firmware binary:
 
 ```bash
-cd penfw
-cargo build --release --bin blink
+just blink
 ```
 
-That should produce the firmware ELF at:
+This compiles the firmware and produces the ELF at:
 
 ```bash
 target/xtensa-esp32-none-elf/release/blink
 ```
 
+Under the hood, this runs `cd penfw && cargo build --release --bin blink` using the Xtensa toolchain from the Nix shell.
+
 ### one-time host setup
 
-The ESP Rust toolchain is installed through `espup`. For a new terminal session, source the environment first:
+The ESP firmware toolchain is provided by the repo-local Nix shell:
 
 ```bash
-. ~/export-esp.sh
+nix develop
 ```
 
-If `espflash` is not installed yet, install it once on the host:
-
-```bash
-cargo install espflash
-```
+That shell puts the Xtensa Rust toolchain, the Xtensa GCC linker toolchain, `ldproxy`, `espflash`, and `just` on `PATH`. It does not depend on any preinstalled Rustup or ESP host setup.
 
 You may also need the CH340 serial driver on the host so the board shows up as a serial device over USB-C.
 
@@ -335,19 +332,15 @@ You are looking for a device that appears when the board is plugged in, often so
 
 ### normal flash attempt
 
-If the board enumerates normally, try:
+Once the firmware is built, flash it with:
 
 ```bash
-cd penfw
-. ~/export-esp.sh
-espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
+just flash blink
 ```
 
-Replace `/dev/cu.YOUR_PORT` with the actual port you found.
+If the board enumerates normally and auto-detection works, this should:
 
-What this should do:
-
-- reset the ESP32 into the serial bootloader if auto-reset works
+- reset the ESP32 into the serial bootloader
 - flash the `blink` firmware
 - reboot into the new program
 - open a serial monitor afterward
@@ -359,15 +352,13 @@ SparkFun documents manual firmware download mode with the `BOOT` and `RST` butto
 1. Hold down `BOOT`.
 2. While holding `BOOT`, press `RST` if the board is already powered, or plug in USB-C if it is not.
 3. Release `BOOT`.
-4. Run the same `espflash flash` command.
+4. Run the flash command again.
 5. After flashing finishes, press `RST` once to reboot into the new firmware if needed.
 
 So the manual recovery flow is:
 
 ```bash
-cd penfw
-. ~/export-esp.sh
-espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
+just flash blink
 ```
 
 If it fails to connect:
@@ -385,26 +376,35 @@ For this `blink` binary, success means:
 - the board resets
 - the `STAT` RGB LED begins blinking red on and off
 
-### useful repeat commands
+### useful commands
 
-Rebuild:
+Rebuild the `blink` firmware:
 
 ```bash
-cd penfw
-cargo build --release --bin blink
+just blink
 ```
 
-Flash again:
+Flash it to the board:
 
 ```bash
-cd penfw
-. ~/export-esp.sh
-espflash flash --port /dev/cu.YOUR_PORT --monitor ../target/xtensa-esp32-none-elf/release/blink
+just flash blink
 ```
 
-If you only want to verify compilation and not flash:
+Check compilation without flashing:
 
 ```bash
-cd penfw
-cargo check --bin blink
+cd penfw && cargo check --release --bin blink
+```
+
+Build and flash any other binary (e.g., `serial_echo`, `hall_read`, `imu_read`):
+
+```bash
+just serial_echo
+just flash serial_echo
+```
+
+See all available build and flash targets:
+
+```bash
+just --list
 ```
