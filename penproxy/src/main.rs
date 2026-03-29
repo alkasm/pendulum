@@ -1,18 +1,5 @@
-use std::{
-    io::{self, BufReader},
-    thread,
-    time::Duration,
-};
-
 use clap::{Parser, Subcommand};
-use penproto::TelemetryPacket;
-use pendulum_lib::{
-    telemetry::{self, TelemetryStream},
-    transport,
-};
-
-const SENSOR_SERIAL_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-const SENSOR_SERIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
+use pendulum_lib::{packet::{self, PacketStream}, transport};
 
 #[derive(Parser)]
 #[command(name = "penproxy")]
@@ -20,8 +7,8 @@ struct Cli {
     #[arg(long, default_value = transport::DEFAULT_TELEMETRY_ADDR)]
     bind: String,
 
-    #[arg(long)]
-    log: bool,
+    #[arg(short, long)]
+    verbose: bool,
 
     #[command(subcommand)]
     source: Option<SourceCommand>,
@@ -50,7 +37,7 @@ enum UpstreamSource {
 fn main() {
     let cli = Cli::parse();
     let bind_addr = cli.bind;
-    let log_frames = cli.log;
+    let log_frames = cli.verbose;
     let upstream = match cli.source.unwrap_or(SourceCommand::Tcp {
         upstream: transport::DEFAULT_TELEMETRY_SOURCE_ADDR.to_string(),
     }) {
@@ -58,10 +45,10 @@ fn main() {
         SourceCommand::Serial { port, baud } => UpstreamSource::Serial { port, baud },
     };
 
-    let telemetry = TelemetryStream::new();
-    let sender = telemetry.publisher();
+    let packets = PacketStream::new();
+    let packet_sender = packets.publisher();
 
-    transport::spawn_tcp_telemetry_server(bind_addr.clone(), telemetry.clone()).unwrap_or_else(
+    transport::spawn_tcp_packet_server(bind_addr.clone(), packets.clone()).unwrap_or_else(
         |error| panic!("Failed to bind proxy telemetry server on {bind_addr}: {error}"),
     );
 
@@ -71,29 +58,22 @@ fn main() {
     );
 
     loop {
-        match &upstream {
-            UpstreamSource::Tcp { addr } => {
-                let mut upstream_rx = transport::connect_tcp_telemetry_blocking(addr);
-                println!(
-                    "Proxy connected to upstream telemetry from {}",
-                    upstream.description()
-                );
+        let mut upstream_rx = upstream.connect_blocking();
+        println!(
+            "Proxy connected to upstream telemetry from {}",
+            upstream.description()
+        );
 
-                while let Some(frame) = telemetry::recv_latest(&mut upstream_rx) {
-                    if log_frames {
-                        match serde_json::to_string(&TelemetryPacket::Runtime(frame)) {
-                            Ok(json) => println!("{json}"),
-                            Err(error) => {
-                                eprintln!("Failed to encode telemetry packet as JSON: {error}")
-                            }
-                        }
+        while let Some(packet) = packet::recv_latest(&mut upstream_rx) {
+            if log_frames {
+                match serde_json::to_string(&packet) {
+                    Ok(json) => println!("{json}"),
+                    Err(error) => {
+                        eprintln!("Failed to encode telemetry packet as JSON: {error}")
                     }
-                    sender.send(frame);
                 }
             }
-            UpstreamSource::Serial { port, baud } => {
-                stream_serial_packets(port, *baud, &sender, log_frames);
-            }
+            packet_sender.send(packet);
         }
 
         println!(
@@ -110,73 +90,10 @@ impl UpstreamSource {
             Self::Serial { port, baud } => format!("serial:{port}@{baud}"),
         }
     }
-}
-
-fn stream_serial_packets(
-    port: &str,
-    baud: u32,
-    sender: &pendulum_lib::telemetry::TelemetrySender,
-    log_frames: bool,
-) {
-    let mut announced_wait = false;
-
-    loop {
-        match open_serial_reader(port, baud) {
-            Ok(mut reader) => {
-                if announced_wait {
-                    println!("Telemetry connected at {port} @ {baud} baud");
-                } else {
-                    println!("Reading telemetry from {port} @ {baud} baud");
-                }
-                announced_wait = false;
-
-                loop {
-                    match transport::read_packet(&mut reader) {
-                        Ok(packet) => {
-                            let should_log = log_frames || matches!(packet, TelemetryPacket::Sensor(_));
-                            if should_log {
-                                match serde_json::to_string(&packet) {
-                                    Ok(json) => println!("{json}"),
-                                    Err(error) => {
-                                        eprintln!("Failed to encode telemetry packet as JSON: {error}")
-                                    }
-                                }
-                            }
-
-                            if let TelemetryPacket::Runtime(frame) = packet {
-                                sender.send(frame);
-                            }
-                        }
-                        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
-                            eprintln!("Discarding invalid telemetry packet: {error}");
-                        }
-                        Err(error) => {
-                            if error.kind() == io::ErrorKind::UnexpectedEof {
-                                eprintln!("Telemetry stream at {port} @ {baud} baud ended: {error}");
-                                return;
-                            }
-                            eprintln!("Telemetry stream at {port} @ {baud} baud ended: {error}");
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(error) => {
-                if !announced_wait {
-                    println!("Waiting for telemetry at {port} @ {baud} baud...");
-                    announced_wait = true;
-                }
-                eprintln!("Telemetry not ready at {port} @ {baud} baud: {error}");
-                thread::sleep(SENSOR_SERIAL_RETRY_DELAY);
-            }
+    fn connect_blocking(&self) -> pendulum_lib::packet::PacketReceiver {
+        match self {
+            Self::Tcp { addr } => transport::connect_tcp_packets_blocking(addr),
+            Self::Serial { port, baud } => transport::connect_serial_packets_blocking(port, *baud),
         }
     }
-}
-
-fn open_serial_reader(port: &str, baud: u32) -> io::Result<BufReader<Box<dyn serialport::SerialPort>>> {
-    let serial = serialport::new(port, baud)
-        .timeout(SENSOR_SERIAL_CONNECT_TIMEOUT)
-        .open()
-        .map_err(io::Error::other)?;
-    Ok(BufReader::new(serial))
 }
