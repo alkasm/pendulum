@@ -26,3 +26,6 @@ motor_open_loop:
 
 serial_echo:
     espflash flash --monitor {{ firmware-dir }}/serial_echo
+
+pendulum_telemetry:
+    espflash flash --monitor {{ firmware-dir }}/pendulum_telemetry

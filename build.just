@@ -35,3 +35,6 @@ motor_open_loop:
 
 serial_echo:
     {{ firmware-build }} serial_echo
+
+pendulum_telemetry:
+    {{ firmware-build }} pendulum_telemetry

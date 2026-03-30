@@ -24,6 +24,7 @@ pub struct RuntimeTelemetryFrame {
 pub enum TelemetryPacket {
     Runtime(RuntimeTelemetryFrame),
     Sensor(SensorTelemetryFrame),
+    Pendulum(PendulumTelemetryFrame),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -98,4 +99,26 @@ pub struct ImuMeasurement {
     pub gz_dps: f32,
     pub temperature_c: f32,
     pub theta_deg: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PendulumTelemetryFrame {
+    pub seq: u32,
+    pub uptime_ms: u32,
+    pub estimate: PendulumEstimateTelemetry,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum PendulumEstimateTelemetry {
+    Missing,
+    UnexpectedWhoAmI { value: u8 },
+    WakeError { register: u8 },
+    ReadError { register: u8 },
+    Measurement(PendulumEstimateMeasurement),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PendulumEstimateMeasurement {
+    pub theta_deg: f32,
+    pub theta_dot_dps: f32,
 }
