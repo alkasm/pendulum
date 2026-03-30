@@ -173,6 +173,11 @@ struct ControlState {
     motor_enabled: bool,
 }
 
+struct ImuEstimatorState {
+    last_theta_dot_dps: Option<f32>,
+    filtered_theta_ddot_dps2: f32,
+}
+
 const PENDULUM_GEOMETRY: PendulumGeometry = PendulumGeometry {
     motor_mount: MotorMount {
         center_from_pivot_mm: Point3Mm {
@@ -260,6 +265,7 @@ fn main() -> ! {
     let mut hall_configured = false;
     let mut imu_verified = false;
     let mut imu_awake = false;
+    let mut imu_estimator = ImuEstimatorState::new();
     let mut control_state = ControlState::new();
 
     let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
@@ -282,7 +288,12 @@ fn main() -> ! {
         let current_sample = current_sensor.read();
         let current = current_telemetry_from_sample(current_sample);
         let hall = read_hall_telemetry(&mut i2c, &mut hall_configured);
-        let estimate = read_pendulum_estimate(&mut i2c, &mut imu_verified, &mut imu_awake);
+        let estimate = read_pendulum_estimate(
+            &mut i2c,
+            &mut imu_verified,
+            &mut imu_awake,
+            &mut imu_estimator,
+        );
         let control = update_control_loop(
             &mut control_state,
             &mut motor_drive,
@@ -391,6 +402,31 @@ impl ControlState {
         }
 
         false
+    }
+}
+
+impl ImuEstimatorState {
+    fn new() -> Self {
+        Self {
+            last_theta_dot_dps: None,
+            filtered_theta_ddot_dps2: 0.0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.last_theta_dot_dps = None;
+        self.filtered_theta_ddot_dps2 = 0.0;
+    }
+
+    fn observe_theta_dot(&mut self, theta_dot_dps: f32) -> f32 {
+        let instant_theta_ddot_dps2 = self
+            .last_theta_dot_dps
+            .map(|previous| (theta_dot_dps - previous) / dt_s())
+            .unwrap_or(0.0);
+        self.last_theta_dot_dps = Some(theta_dot_dps);
+        self.filtered_theta_ddot_dps2 =
+            0.85 * self.filtered_theta_ddot_dps2 + 0.15 * instant_theta_ddot_dps2;
+        self.filtered_theta_ddot_dps2
     }
 }
 
@@ -944,18 +980,24 @@ fn read_pendulum_estimate(
     i2c: &mut I2c<'_, Blocking>,
     imu_verified: &mut bool,
     imu_awake: &mut bool,
+    imu_estimator: &mut ImuEstimatorState,
 ) -> PendulumEstimateTelemetry {
     if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
         *imu_verified = false;
         *imu_awake = false;
+        imu_estimator.reset();
         return PendulumEstimateTelemetry::Missing;
     }
 
     if !*imu_verified {
         match imu_verify(i2c, GY521_DEFAULT_I2C_ADDR) {
             Ok(()) => *imu_verified = true,
-            Err(ImuProbeError::RegisterRead) => return PendulumEstimateTelemetry::Missing,
+            Err(ImuProbeError::RegisterRead) => {
+                imu_estimator.reset();
+                return PendulumEstimateTelemetry::Missing;
+            }
             Err(ImuProbeError::UnexpectedWhoAmI(value)) => {
+                imu_estimator.reset();
                 return PendulumEstimateTelemetry::UnexpectedWhoAmI { value };
             }
         }
@@ -964,13 +1006,19 @@ fn read_pendulum_estimate(
     if !*imu_awake {
         match imu_wake(i2c, GY521_DEFAULT_I2C_ADDR) {
             Ok(()) => *imu_awake = true,
-            Err(register) => return PendulumEstimateTelemetry::WakeError { register },
+            Err(register) => {
+                imu_estimator.reset();
+                return PendulumEstimateTelemetry::WakeError { register };
+            }
         }
     }
 
-    match imu_read_pendulum_measurement(i2c, GY521_DEFAULT_I2C_ADDR) {
+    match imu_read_pendulum_measurement(i2c, GY521_DEFAULT_I2C_ADDR, imu_estimator) {
         Ok(measurement) => PendulumEstimateTelemetry::Measurement(measurement),
-        Err(register) => PendulumEstimateTelemetry::ReadError { register },
+        Err(register) => {
+            imu_estimator.reset();
+            PendulumEstimateTelemetry::ReadError { register }
+        }
     }
 }
 
@@ -1048,6 +1096,7 @@ fn imu_wake(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
 fn imu_read_pendulum_measurement(
     i2c: &mut I2c<'_, Blocking>,
     address: u8,
+    imu_estimator: &mut ImuEstimatorState,
 ) -> Result<PendulumEstimateMeasurement, u8> {
     let mut buffer = [0_u8; 14];
     i2c.write_read(address, &[MPU_REG_ACCEL_XOUT_H], &mut buffer)
@@ -1073,13 +1122,53 @@ fn imu_read_pendulum_measurement(
     let accel_body_g = transform_imu_vector_to_body(accel_imu_g, PENDULUM_GEOMETRY.imu_mount.axes_in_body);
     let gyro_body_dps = transform_imu_vector_to_body(gyro_imu_dps, PENDULUM_GEOMETRY.imu_mount.axes_in_body);
 
-    let theta_deg = atan2f(-accel_body_g.x, accel_body_g.y) * (180.0 / core::f32::consts::PI);
     let theta_dot_dps = -gyro_body_dps.z;
+    let theta_ddot_dps2 = imu_estimator.observe_theta_dot(theta_dot_dps);
+    let pivot_to_imu_body_mm = pivot_to_imu_body_mm(PENDULUM_GEOMETRY);
+    let rotational_specific_force_g = rotational_specific_force_g(
+        theta_dot_dps,
+        theta_ddot_dps2,
+        pivot_to_imu_body_mm,
+    );
+    let gravity_only_accel_body_g = Vector3 {
+        x: accel_body_g.x - rotational_specific_force_g.x,
+        y: accel_body_g.y - rotational_specific_force_g.y,
+        z: accel_body_g.z - rotational_specific_force_g.z,
+    };
+    let theta_deg =
+        atan2f(-gravity_only_accel_body_g.x, gravity_only_accel_body_g.y) * (180.0 / core::f32::consts::PI);
 
     Ok(PendulumEstimateMeasurement {
         theta_deg,
         theta_dot_dps,
     })
+}
+
+fn pivot_to_imu_body_mm(geometry: PendulumGeometry) -> Point3Mm {
+    Point3Mm {
+        x: geometry.motor_mount.center_from_pivot_mm.x + geometry.imu_mount.translation_from_motor_mm.x,
+        y: geometry.motor_mount.center_from_pivot_mm.y + geometry.imu_mount.translation_from_motor_mm.y,
+        z: geometry.motor_mount.center_from_pivot_mm.z + geometry.imu_mount.translation_from_motor_mm.z,
+    }
+}
+
+fn rotational_specific_force_g(
+    theta_dot_dps: f32,
+    theta_ddot_dps2: f32,
+    pivot_to_imu_body_mm: Point3Mm,
+) -> Vector3 {
+    const G_M_PER_S2: f32 = 9.80665;
+
+    let omega_rad_s = degrees_to_radians(theta_dot_dps);
+    let alpha_rad_s2 = degrees_to_radians(theta_ddot_dps2);
+    let rx_m = pivot_to_imu_body_mm.x / 1_000.0;
+    let ry_m = pivot_to_imu_body_mm.y / 1_000.0;
+
+    Vector3 {
+        x: ((-alpha_rad_s2 * ry_m) - (omega_rad_s * omega_rad_s * rx_m)) / G_M_PER_S2,
+        y: ((alpha_rad_s2 * rx_m) - (omega_rad_s * omega_rad_s * ry_m)) / G_M_PER_S2,
+        z: 0.0,
+    }
 }
 
 fn transform_imu_vector_to_body(vector: Vector3, axes_in_body: ImuAxesInBody) -> Vector3 {
