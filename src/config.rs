@@ -28,10 +28,15 @@ pub fn default_pendulum() -> Pendulum {
         default_body_side_length(),
         default_body_depth(),
     );
-    let center_of_mass_from_pivot = Point2::new(body.leg_x / 3.0, body.leg_y / 3.0);
+    // First-pass approximation: the motor/board dominate the mass budget,
+    // so treat the assembly COM as the motor center.
+    let center_of_mass_from_pivot = Point2::new(
+        Length::new::<millimeter>(0.0),
+        Length::new::<millimeter>(60.235),
+    );
     let motor_mount = MotorMount::new(Point3::new(
         Length::new::<millimeter>(0.0),
-        Length::new::<millimeter>(0.235),
+        Length::new::<millimeter>(60.235),
         Length::new::<millimeter>(0.0),
     ));
     let imu_mount = ImuMount::new(

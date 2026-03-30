@@ -132,6 +132,8 @@ pub struct PendulumControlTelemetry {
     pub mode: PendulumControlMode,
     pub torque_command_nm: f32,
     pub drive_command: f32,
+    pub electrical_angle_deg: f32,
+    pub uq_v: f32,
     pub wheel_angle_deg: f32,
     pub wheel_speed_dps: f32,
     pub commutation_step: u8,

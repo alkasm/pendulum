@@ -80,6 +80,8 @@ fn main() -> ! {
                 mode: PendulumControlMode::Idle,
                 torque_command_nm: 0.0,
                 drive_command: 0.0,
+                electrical_angle_deg: 0.0,
+                uq_v: 0.0,
                 wheel_angle_deg: 0.0,
                 wheel_speed_dps: 0.0,
                 commutation_step: 0,
