@@ -125,6 +125,10 @@
               toolchains.xtensa-gcc
               toolchains.xtensa-rust
             ];
+
+            shellHook = ''
+              export PS1="\[\e[36m\]❄ pendulum\[\e[0m\] $PS1"
+            '';
           };
         });
     };
