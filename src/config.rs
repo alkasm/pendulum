@@ -1,7 +1,11 @@
+use crate::pendulum::{
+    BodyAxis3, ImuAxesInBody, ImuMount, MotorMount, Pendulum, PendulumGeometry,
+    PendulumHardware, Point2, Point3, RightTriangularBody,
+};
 use uom::si::{
     angular_velocity::radian_per_second,
     f64::{AngularVelocity, Length, Time, Torque},
-    length::meter,
+    length::{meter, millimeter},
     time::second,
     torque::newton_meter,
 };
@@ -12,6 +16,46 @@ pub fn default_body_side_length() -> Length {
 
 pub fn default_wheel_radius() -> Length {
     Length::new::<meter>(0.03)
+}
+
+pub fn default_body_depth() -> Length {
+    Length::new::<meter>(0.02)
+}
+
+pub fn default_pendulum() -> Pendulum {
+    let body = RightTriangularBody::new(
+        default_body_side_length(),
+        default_body_side_length(),
+        default_body_depth(),
+    );
+    let center_of_mass_from_pivot = Point2::new(body.leg_x / 3.0, body.leg_y / 3.0);
+    let motor_mount = MotorMount::new(Point3::new(
+        Length::new::<millimeter>(0.0),
+        Length::new::<millimeter>(0.235),
+        Length::new::<millimeter>(0.0),
+    ));
+    let imu_mount = ImuMount::new(
+        Point3::new(
+            Length::new::<millimeter>(-50.0),
+            Length::new::<millimeter>(27.36),
+            Length::new::<millimeter>(10.0),
+        ),
+        ImuAxesInBody::new(
+        BodyAxis3::Down,
+        BodyAxis3::Right,
+        BodyAxis3::TowardViewer,
+        ),
+    );
+
+    Pendulum::new(
+        PendulumGeometry::new(
+            body,
+            center_of_mass_from_pivot,
+            motor_mount,
+            imu_mount,
+        ),
+        PendulumHardware::new(0x68, 0x22),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
