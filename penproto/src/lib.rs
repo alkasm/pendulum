@@ -105,7 +105,11 @@ pub struct ImuMeasurement {
 pub struct PendulumTelemetryFrame {
     pub seq: u32,
     pub uptime_ms: u32,
+    pub motor_driver_diag_high: bool,
+    pub current: CurrentTelemetry,
+    pub hall: HallTelemetry,
     pub estimate: PendulumEstimateTelemetry,
+    pub control: PendulumControlTelemetry,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -121,4 +125,29 @@ pub enum PendulumEstimateTelemetry {
 pub struct PendulumEstimateMeasurement {
     pub theta_deg: f32,
     pub theta_dot_dps: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PendulumControlTelemetry {
+    pub mode: PendulumControlMode,
+    pub torque_command_nm: f32,
+    pub drive_command: f32,
+    pub wheel_angle_deg: f32,
+    pub wheel_speed_dps: f32,
+    pub commutation_step: u8,
+    pub commutation_center_deg: f32,
+    pub motor_enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum PendulumControlMode {
+    Startup,
+    Calibrating,
+    Arming,
+    WaitingForImu,
+    WaitingForHall,
+    CaptureOutOfRange,
+    CurrentLimited,
+    Idle,
+    Active,
 }

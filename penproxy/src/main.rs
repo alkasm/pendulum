@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use pendulum_lib::{packet::{self, PacketStream}, transport};
+use pendulum_lib::{
+    packet::{self, PacketStream},
+    transport,
+};
 
 #[derive(Parser)]
 #[command(name = "penproxy")]

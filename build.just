@@ -33,6 +33,9 @@ motor_board_test:
 motor_open_loop:
     {{ firmware-build }} motor_open_loop
 
+motor_hall_lock:
+    {{ firmware-build }} motor_hall_lock
+
 serial_echo:
     {{ firmware-build }} serial_echo
 

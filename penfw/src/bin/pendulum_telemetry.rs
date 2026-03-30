@@ -14,8 +14,8 @@ use bringup::{
 use esp_hal::{Blocking, i2c::master::I2c, main};
 use libm::atan2f;
 use penproto::{
-    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
-    TelemetryPacket,
+    CurrentTelemetry, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
+    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame, TelemetryPacket,
 };
 
 use hw::GY521_DEFAULT_I2C_ADDR;
@@ -29,6 +29,21 @@ const MPU_REG_WHO_AM_I: u8 = 0x75;
 const MPU6050_WHO_AM_I_VALUE: u8 = 0x68;
 const ACCEL_LSB_PER_G: f32 = 16_384.0;
 const GYRO_LSB_PER_DPS: f32 = 131.0;
+
+const EMPTY_CURRENT: CurrentTelemetry = CurrentTelemetry {
+    mcp6021_counts: 0,
+    mcp6021_delta_counts: 0,
+    mcp6021_volts: 0.0,
+    ina_u_counts: 0,
+    ina_u_delta_counts: 0,
+    ina_u_amps: 0.0,
+    ina_v_counts: 0,
+    ina_v_delta_counts: 0,
+    ina_v_amps: 0.0,
+    ina_w_counts: 0,
+    ina_w_delta_counts: 0,
+    ina_w_amps: 0.0,
+};
 
 #[derive(Clone, Copy)]
 enum ImuProbeError {
@@ -57,7 +72,20 @@ fn main() -> ! {
         let frame = PendulumTelemetryFrame {
             seq,
             uptime_ms: seq.saturating_mul(SAMPLE_PERIOD_MS),
+            motor_driver_diag_high: false,
+            current: EMPTY_CURRENT,
+            hall: HallTelemetry::Missing,
             estimate,
+            control: PendulumControlTelemetry {
+                mode: PendulumControlMode::Idle,
+                torque_command_nm: 0.0,
+                drive_command: 0.0,
+                wheel_angle_deg: 0.0,
+                wheel_speed_dps: 0.0,
+                commutation_step: 0,
+                commutation_center_deg: 0.0,
+                motor_enabled: false,
+            },
         };
         let packet = TelemetryPacket::Pendulum(frame);
 

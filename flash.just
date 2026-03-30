@@ -1,7 +1,7 @@
 firmware-dir := "target/xtensa-esp32-none-elf/release"
 
 penfw:
-    espflash flash --monitor {{ firmware-dir }}/penfw
+    espflash flash {{ firmware-dir }}/penfw
 
 blink:
     espflash flash --monitor {{ firmware-dir }}/blink
@@ -23,6 +23,9 @@ motor_board_test:
 
 motor_open_loop:
     espflash flash --monitor {{ firmware-dir }}/motor_open_loop
+
+motor_hall_lock:
+    espflash flash --monitor {{ firmware-dir }}/motor_hall_lock
 
 serial_echo:
     espflash flash --monitor {{ firmware-dir }}/serial_echo
