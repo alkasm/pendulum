@@ -32,17 +32,17 @@ pub fn default_pendulum() -> Pendulum {
     // so treat the assembly COM as the motor center.
     let center_of_mass_from_pivot = Point2::new(
         Length::new::<millimeter>(0.0),
-        Length::new::<millimeter>(60.235),
+        Length::new::<millimeter>(23.5891324),
     );
     let motor_mount = MotorMount::new(Point3::new(
         Length::new::<millimeter>(0.0),
-        Length::new::<millimeter>(60.235),
+        Length::new::<millimeter>(23.5891324),
         Length::new::<millimeter>(0.0),
     ));
     let imu_mount = ImuMount::new(
         Point3::new(
-            Length::new::<millimeter>(-50.0),
-            Length::new::<millimeter>(27.36),
+            Length::new::<millimeter>(40.0),
+            Length::new::<millimeter>(36.8190526),
             Length::new::<millimeter>(10.0),
         ),
         ImuAxesInBody::new(
