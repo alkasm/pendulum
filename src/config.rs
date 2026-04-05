@@ -4,8 +4,10 @@ use crate::pendulum::{
 };
 use uom::si::{
     angular_velocity::radian_per_second,
-    f64::{AngularVelocity, Length, Time, Torque},
+    f64::{AngularVelocity, Length, Mass, MomentOfInertia, Time, Torque},
     length::{meter, millimeter},
+    mass::kilogram,
+    moment_of_inertia::kilogram_square_meter,
     time::second,
     torque::newton_meter,
 };
@@ -22,6 +24,21 @@ pub fn default_body_depth() -> Length {
     Length::new::<meter>(0.02)
 }
 
+pub fn default_flywheel_mass() -> Mass {
+    Mass::new::<kilogram>(0.0406)
+}
+
+pub fn default_flywheel_radius() -> Length {
+    Length::new::<millimeter>(45.0)
+}
+
+pub fn default_flywheel_inertia() -> MomentOfInertia {
+    let mass_kg = default_flywheel_mass().get::<kilogram>();
+    let radius_m = default_flywheel_radius().get::<meter>();
+    // First-pass approximation: treat the added flywheel mass as a thin rim.
+    MomentOfInertia::new::<kilogram_square_meter>(mass_kg * radius_m.powi(2))
+}
+
 pub fn default_pendulum() -> Pendulum {
     let body = RightTriangularBody::new(
         default_body_side_length(),
@@ -32,17 +49,17 @@ pub fn default_pendulum() -> Pendulum {
     // so treat the assembly COM as the motor center.
     let center_of_mass_from_pivot = Point2::new(
         Length::new::<millimeter>(0.0),
-        Length::new::<millimeter>(23.5891324),
+        Length::new::<millimeter>(60.235),
     );
     let motor_mount = MotorMount::new(Point3::new(
         Length::new::<millimeter>(0.0),
-        Length::new::<millimeter>(23.5891324),
+        Length::new::<millimeter>(60.235),
         Length::new::<millimeter>(0.0),
     ));
     let imu_mount = ImuMount::new(
         Point3::new(
-            Length::new::<millimeter>(40.0),
-            Length::new::<millimeter>(36.8190526),
+            Length::new::<millimeter>(-50.0),
+            Length::new::<millimeter>(27.36),
             Length::new::<millimeter>(10.0),
         ),
         ImuAxesInBody::new(
@@ -71,6 +88,7 @@ pub struct RuntimeConfig {
     pub max_motor_torque: Torque,
     pub motor_no_load_speed: AngularVelocity,
     pub motor_torque_constant_nm_per_a: f64,
+    pub wheel_inertia: MomentOfInertia,
 }
 
 impl Default for RuntimeConfig {
@@ -85,6 +103,7 @@ impl Default for RuntimeConfig {
             motor_no_load_speed: AngularVelocity::new::<radian_per_second>(209.4),
             // Approximate torque constant from datasheet values: 0.031 N*m / 0.8 A ~= 0.039 N*m/A.
             motor_torque_constant_nm_per_a: 0.039,
+            wheel_inertia: default_flywheel_inertia(),
         }
     }
 }

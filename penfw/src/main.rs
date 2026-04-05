@@ -182,14 +182,14 @@ const PENDULUM_GEOMETRY: PendulumGeometry = PendulumGeometry {
     motor_mount: MotorMount {
         center_from_pivot_mm: Point3Mm {
             x: 0.0,
-            y: 23.5891324,
+            y: 60.235,
             z: 0.0,
         },
     },
     imu_mount: ImuMount {
         translation_from_motor_mm: Point3Mm {
-            x: 40.0,
-            y: 36.8190526,
+            x: -50.0,
+            y: 27.36,
             z: 10.0,
         },
         axes_in_body: ImuAxesInBody {
