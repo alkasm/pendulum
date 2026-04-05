@@ -29,7 +29,7 @@ pub fn default_flywheel_mass() -> Mass {
 }
 
 pub fn default_flywheel_radius() -> Length {
-    Length::new::<millimeter>(45.0)
+    Length::new::<millimeter>(22.5)
 }
 
 pub fn default_flywheel_inertia() -> MomentOfInertia {
