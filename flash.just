@@ -27,6 +27,9 @@ motor_open_loop:
 motor_hall_lock:
     espflash flash --monitor {{ firmware-dir }}/motor_hall_lock
 
+wheel_torque_probe:
+    espflash flash --monitor {{ firmware-dir }}/wheel_torque_probe
+
 serial_echo:
     espflash flash --monitor {{ firmware-dir }}/serial_echo
 

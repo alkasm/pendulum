@@ -36,6 +36,9 @@ motor_open_loop:
 motor_hall_lock:
     {{ firmware-build }} motor_hall_lock
 
+wheel_torque_probe:
+    {{ firmware-build }} wheel_torque_probe
+
 serial_echo:
     {{ firmware-build }} serial_echo
 
