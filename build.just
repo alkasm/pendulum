@@ -39,6 +39,9 @@ motor_hall_lock:
 wheel_torque_probe:
     {{ firmware-build }} wheel_torque_probe
 
+motor_max_spin:
+    {{ firmware-build }} motor_max_spin
+
 serial_echo:
     {{ firmware-build }} serial_echo
 

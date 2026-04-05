@@ -30,6 +30,9 @@ motor_hall_lock:
 wheel_torque_probe:
     espflash flash --monitor {{ firmware-dir }}/wheel_torque_probe
 
+motor_max_spin:
+    espflash flash --monitor {{ firmware-dir }}/motor_max_spin
+
 serial_echo:
     espflash flash --monitor {{ firmware-dir }}/serial_echo
 
