@@ -27,10 +27,15 @@ use esp_hal::{
 };
 use hw::{CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR};
 use libm::{atan2f, sinf};
+use pendulum_lib::{
+    config::default_pendulum,
+    pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
+};
 use penproto::{
     CurrentTelemetry, HallMeasurement, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
     PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame, TelemetryPacket,
 };
+use uom::si::length::millimeter;
 
 const CONTROL_PERIOD_MS: u32 = 5;
 const FRAME_BUF_LEN: usize = 512;
@@ -89,49 +94,9 @@ enum ImuProbeError {
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
-enum BodyAxis3 {
-    Right,
-    Left,
-    Up,
-    Down,
-    TowardViewer,
-    AwayFromViewer,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
 struct Point3Mm {
     x: f32,
     y: f32,
-    z: f32,
-}
-
-#[derive(Clone, Copy)]
-struct ImuAxesInBody {
-    x_axis: BodyAxis3,
-    y_axis: BodyAxis3,
-    z_axis: BodyAxis3,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct ImuMount {
-    translation_from_motor_mm: Point3Mm,
-    axes_in_body: ImuAxesInBody,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct MotorMount {
-    center_from_pivot_mm: Point3Mm,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-struct PendulumGeometry {
-    motor_mount: MotorMount,
-    imu_mount: ImuMount,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -177,28 +142,6 @@ struct ImuEstimatorState {
     last_theta_dot_dps: Option<f32>,
     filtered_theta_ddot_dps2: f32,
 }
-
-const PENDULUM_GEOMETRY: PendulumGeometry = PendulumGeometry {
-    motor_mount: MotorMount {
-        center_from_pivot_mm: Point3Mm {
-            x: 0.0,
-            y: 60.235,
-            z: 0.0,
-        },
-    },
-    imu_mount: ImuMount {
-        translation_from_motor_mm: Point3Mm {
-            x: -50.0,
-            y: 27.36,
-            z: 10.0,
-        },
-        axes_in_body: ImuAxesInBody {
-            x_axis: BodyAxis3::Down,
-            y_axis: BodyAxis3::Right,
-            z_axis: BodyAxis3::TowardViewer,
-        },
-    },
-};
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -267,6 +210,7 @@ fn main() -> ! {
     let mut imu_awake = false;
     let mut imu_estimator = ImuEstimatorState::new();
     let mut control_state = ControlState::new();
+    let pendulum = default_pendulum();
 
     let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
     motor_drive.disable();
@@ -293,6 +237,7 @@ fn main() -> ! {
             &mut imu_verified,
             &mut imu_awake,
             &mut imu_estimator,
+            &pendulum.geometry,
         );
         let control = update_control_loop(
             &mut control_state,
@@ -981,6 +926,7 @@ fn read_pendulum_estimate(
     imu_verified: &mut bool,
     imu_awake: &mut bool,
     imu_estimator: &mut ImuEstimatorState,
+    geometry: &PendulumGeometry,
 ) -> PendulumEstimateTelemetry {
     if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
         *imu_verified = false;
@@ -1013,7 +959,7 @@ fn read_pendulum_estimate(
         }
     }
 
-    match imu_read_pendulum_measurement(i2c, GY521_DEFAULT_I2C_ADDR, imu_estimator) {
+    match imu_read_pendulum_measurement(i2c, GY521_DEFAULT_I2C_ADDR, imu_estimator, geometry) {
         Ok(measurement) => PendulumEstimateTelemetry::Measurement(measurement),
         Err(register) => {
             imu_estimator.reset();
@@ -1097,6 +1043,7 @@ fn imu_read_pendulum_measurement(
     i2c: &mut I2c<'_, Blocking>,
     address: u8,
     imu_estimator: &mut ImuEstimatorState,
+    geometry: &PendulumGeometry,
 ) -> Result<PendulumEstimateMeasurement, u8> {
     let mut buffer = [0_u8; 14];
     i2c.write_read(address, &[MPU_REG_ACCEL_XOUT_H], &mut buffer)
@@ -1119,12 +1066,12 @@ fn imu_read_pendulum_measurement(
         y: gy_raw as f32 / GYRO_LSB_PER_DPS,
         z: gz_raw as f32 / GYRO_LSB_PER_DPS,
     };
-    let accel_body_g = transform_imu_vector_to_body(accel_imu_g, PENDULUM_GEOMETRY.imu_mount.axes_in_body);
-    let gyro_body_dps = transform_imu_vector_to_body(gyro_imu_dps, PENDULUM_GEOMETRY.imu_mount.axes_in_body);
+    let accel_body_g = transform_imu_vector_to_body(accel_imu_g, geometry.imu_mount.axes_in_body);
+    let gyro_body_dps = transform_imu_vector_to_body(gyro_imu_dps, geometry.imu_mount.axes_in_body);
 
     let theta_dot_dps = -gyro_body_dps.z;
     let theta_ddot_dps2 = imu_estimator.observe_theta_dot(theta_dot_dps);
-    let pivot_to_imu_body_mm = pivot_to_imu_body_mm(PENDULUM_GEOMETRY);
+    let pivot_to_imu_body_mm = pivot_to_imu_body_mm(geometry);
     let rotational_specific_force_g = rotational_specific_force_g(
         theta_dot_dps,
         theta_ddot_dps2,
@@ -1144,11 +1091,12 @@ fn imu_read_pendulum_measurement(
     })
 }
 
-fn pivot_to_imu_body_mm(geometry: PendulumGeometry) -> Point3Mm {
+fn pivot_to_imu_body_mm(geometry: &PendulumGeometry) -> Point3Mm {
     Point3Mm {
-        x: geometry.motor_mount.center_from_pivot_mm.x + geometry.imu_mount.translation_from_motor_mm.x,
-        y: geometry.motor_mount.center_from_pivot_mm.y + geometry.imu_mount.translation_from_motor_mm.y,
-        z: geometry.motor_mount.center_from_pivot_mm.z + geometry.imu_mount.translation_from_motor_mm.z,
+        x: (geometry.motor_mount.center_from_pivot.x + geometry.imu_mount.translation_from_motor.x)
+            .get::<millimeter>() as f32,
+        y: (geometry.motor_mount.center_from_pivot.y + geometry.imu_mount.translation_from_motor.y)
+            .get::<millimeter>() as f32,
     }
 }
 

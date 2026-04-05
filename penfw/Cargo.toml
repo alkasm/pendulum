@@ -21,6 +21,13 @@ esp-hal = { version = "1.0.0", features = ["esp32", "unstable"] }
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32"] }
 esp-hal-smartled2 = "0.28.1"
 libm = "0.2"
+pendulum-lib = { path = "..", default-features = false }
 penproto = { path = "../penproto" }
 postcard = "1.1"
 smart-leds = "0.4"
+uom = { version = "0.38.0", default-features = false, features = [
+    "autoconvert",
+    "f64",
+    "si",
+    "serde",
+] }

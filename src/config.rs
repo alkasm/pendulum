@@ -36,7 +36,7 @@ pub fn default_flywheel_inertia() -> MomentOfInertia {
     let mass_kg = default_flywheel_mass().get::<kilogram>();
     let radius_m = default_flywheel_radius().get::<meter>();
     // First-pass approximation: treat the added flywheel mass as a thin rim.
-    MomentOfInertia::new::<kilogram_square_meter>(mass_kg * radius_m.powi(2))
+    MomentOfInertia::new::<kilogram_square_meter>(mass_kg * radius_m * radius_m)
 }
 
 pub fn default_pendulum() -> Pendulum {
