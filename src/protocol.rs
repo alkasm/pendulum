@@ -191,15 +191,6 @@ pub enum DeviceFault {
     MissingCalibration,
     InvalidCalibration,
     MissingWifiConfig,
-    WifiNeverValidated,
-    WifiValidationFailed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WifiValidationState {
-    NeverValidated,
-    Validated,
-    ValidationFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -246,9 +237,7 @@ impl WifiCredentials {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WifiStatus {
-    pub configured: bool,
     pub ssid: Option<WifiSsid>,
-    pub validation: WifiValidationState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -290,7 +279,6 @@ pub struct WifiValidationReport {
 pub struct StoredDeviceConfig {
     pub mode: DeviceMode,
     pub wifi: Option<WifiCredentials>,
-    pub wifi_validation: WifiValidationState,
 }
 
 impl Default for StoredDeviceConfig {
@@ -298,7 +286,6 @@ impl Default for StoredDeviceConfig {
         Self {
             mode: DeviceMode::Manufacturing,
             wifi: None,
-            wifi_validation: WifiValidationState::NeverValidated,
         }
     }
 }
@@ -306,9 +293,7 @@ impl Default for StoredDeviceConfig {
 impl StoredDeviceConfig {
     pub fn wifi_status(&self) -> WifiStatus {
         WifiStatus {
-            configured: self.wifi.is_some(),
             ssid: self.wifi.as_ref().map(|wifi| wifi.ssid.clone()),
-            validation: self.wifi_validation.clone(),
         }
     }
 }

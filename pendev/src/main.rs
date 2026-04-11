@@ -1,6 +1,5 @@
 use std::{
-    env,
-    io::{self, BufReader, Read, Write},
+    io::{BufReader, Write},
     time::Duration,
 };
 
@@ -37,9 +36,9 @@ enum Command {
         #[command(subcommand)]
         command: WifiCommand,
     },
-    Calibrate {
+    Motor {
         #[command(subcommand)]
-        command: CalibrateCommand,
+        command: MotorCommand,
     },
     Run {
         #[command(subcommand)]
@@ -57,23 +56,14 @@ enum ModeCommand {
 #[derive(Subcommand, Debug)]
 enum WifiCommand {
     Status,
-    Set {
-        #[arg(long)]
-        ssid: Option<String>,
-        #[arg(long)]
-        ssid_env: Option<String>,
-        #[arg(long)]
-        password_env: Option<String>,
-        #[arg(long)]
-        password_stdin: bool,
-    },
+    Set { ssid: String, password: String },
     Clear,
     Validate,
 }
 
 #[derive(Subcommand, Debug)]
-enum CalibrateCommand {
-    Motor,
+enum MotorCommand {
+    Calibrate,
 }
 
 #[derive(Subcommand, Debug)]
@@ -117,18 +107,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let response = send_request(&cli, DeviceRequest::GetWifiStatus)?;
                 print_wifi_status(&expect_wifi_status(response)?);
             }
-            WifiCommand::Set {
-                ssid,
-                ssid_env,
-                password_env,
-                password_stdin,
-            } => {
-                let credentials = resolve_wifi_credentials(
-                    ssid.clone(),
-                    ssid_env.clone(),
-                    password_env.clone(),
-                    *password_stdin,
-                )?;
+            WifiCommand::Set { ssid, password } => {
+                let credentials = WifiCredentials::new(ssid, password)
+                    .map_err(|error| format!("invalid Wi-Fi credentials: {error:?}"))?;
                 let response = send_request(&cli, DeviceRequest::SetWifiConfig(credentials))?;
                 print_response(response)?;
             }
@@ -141,8 +122,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 print_response(response)?;
             }
         },
-        Command::Calibrate { command } => match command {
-            CalibrateCommand::Motor => {
+        Command::Motor { command } => match command {
+            MotorCommand::Calibrate => {
                 let response = send_request(&cli, DeviceRequest::StartMotorCalibration)?;
                 print_response(response)?;
             }
@@ -184,52 +165,9 @@ fn command_timeout(command: &Command) -> Duration {
             WifiCommand::Set { .. } | WifiCommand::Validate => Duration::from_secs(20),
             _ => Duration::from_secs(5),
         },
-        Command::Calibrate { .. } => Duration::from_secs(120),
+        Command::Motor { .. } => Duration::from_secs(120),
         _ => Duration::from_secs(5),
     }
-}
-
-fn resolve_wifi_credentials(
-    ssid: Option<String>,
-    ssid_env: Option<String>,
-    password_env: Option<String>,
-    password_stdin: bool,
-) -> Result<WifiCredentials, Box<dyn std::error::Error>> {
-    let ssid = match (ssid, ssid_env) {
-        (Some(value), None) => value,
-        (None, Some(var_name)) => env::var(&var_name)
-            .map_err(|_| format!("environment variable `{var_name}` is not set"))?,
-        (Some(_), Some(_)) => {
-            return Err("use only one of --ssid or --ssid-env".into());
-        }
-        (None, None) => {
-            return Err("one of --ssid or --ssid-env is required".into());
-        }
-    };
-
-    let password = match (password_env, password_stdin) {
-        (Some(var_name), false) => env::var(&var_name)
-            .map_err(|_| format!("environment variable `{var_name}` is not set"))?,
-        (None, true) => read_password_from_stdin()?,
-        (Some(_), true) => {
-            return Err("use only one of --password-env or --password-stdin".into());
-        }
-        (None, false) => {
-            return Err("one of --password-env or --password-stdin is required".into());
-        }
-    };
-
-    WifiCredentials::new(&ssid, &password)
-        .map_err(|error| format!("invalid Wi-Fi credentials: {error:?}").into())
-}
-
-fn read_password_from_stdin() -> Result<String, Box<dyn std::error::Error>> {
-    let mut password = String::new();
-    io::stdin().read_to_string(&mut password)?;
-    while password.ends_with('\n') || password.ends_with('\r') {
-        password.pop();
-    }
-    Ok(password)
 }
 
 fn expect_ack(response: DeviceResponse) -> Result<(), Box<dyn std::error::Error>> {
@@ -311,9 +249,7 @@ fn print_status(status: &DeviceStatus) {
 }
 
 fn print_wifi_status(status: &WifiStatus) {
-    println!("wifi.configured: {}", status.configured);
     println!("wifi.ssid: {:?}", status.ssid);
-    println!("wifi.validation: {:?}", status.validation);
 }
 
 fn print_calibration_status(status: CalibrationStatus) {
@@ -347,23 +283,17 @@ mod tests {
     }
 
     #[test]
-    fn parses_wifi_set_secret_safe_flags() {
-        let cli = Cli::try_parse_from([
-            "pendev",
-            "wifi",
-            "set",
-            "--ssid-env",
-            "WIFI_SSID",
-            "--password-stdin",
-        ])
-        .unwrap();
+    fn parses_wifi_set_arguments() {
+        let cli =
+            Cli::try_parse_from(["pendev", "wifi", "set", "pendulum-net", "super-secret"])
+                .unwrap();
 
         match cli.command {
-            Command::Wifi { command: WifiCommand::Set { ssid, ssid_env, password_env, password_stdin } } => {
-                assert!(ssid.is_none());
-                assert_eq!(ssid_env.as_deref(), Some("WIFI_SSID"));
-                assert!(password_env.is_none());
-                assert!(password_stdin);
+            Command::Wifi {
+                command: WifiCommand::Set { ssid, password },
+            } => {
+                assert_eq!(ssid, "pendulum-net");
+                assert_eq!(password, "super-secret");
             }
             other => panic!("unexpected command: {other:?}"),
         }

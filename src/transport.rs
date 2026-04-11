@@ -322,8 +322,8 @@ mod tests {
     use std::io::Cursor;
 
     use crate::{
-        DeviceRequest, DeviceResponse, DeviceStatus, CalibrationStatus, DeviceMode, DeviceState,
-        WifiStatus, WifiValidationState,
+        CalibrationStatus, DeviceMode, DeviceRequest, DeviceResponse, DeviceState, DeviceStatus,
+        WifiStatus,
     };
 
     use super::{read_cobs_message, write_cobs_message};
@@ -345,11 +345,7 @@ mod tests {
             mode: DeviceMode::Manufacturing,
             state: DeviceState::Service,
             fault: None,
-            wifi: WifiStatus {
-                configured: false,
-                ssid: None,
-                validation: WifiValidationState::NeverValidated,
-            },
+            wifi: WifiStatus { ssid: None },
             calibration: CalibrationStatus::Missing,
             control_mode: None,
         });

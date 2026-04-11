@@ -1,7 +1,7 @@
 firmware-dir := "target/xtensa-esp32-none-elf/release"
 
 penfw:
-    espflash flash {{ firmware-dir }}/penfw
+    espflash flash --monitor {{ firmware-dir }}/penfw
 
 blink:
     espflash flash --monitor {{ firmware-dir }}/blink

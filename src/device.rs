@@ -1,6 +1,6 @@
 use crate::{
     CalibrationStatus, DeviceFault, DeviceMode, DeviceState, DeviceStatus, StoredDeviceConfig,
-    StoredMotorCalibration, WifiStatus, WifiValidationState, settings_record::RecordLoad,
+    StoredMotorCalibration, WifiStatus, settings_record::RecordLoad,
 };
 
 pub fn calibration_status(record: &RecordLoad<StoredMotorCalibration>) -> CalibrationStatus {
@@ -12,11 +12,7 @@ pub fn calibration_status(record: &RecordLoad<StoredMotorCalibration>) -> Calibr
 }
 
 pub fn default_wifi_status() -> WifiStatus {
-    WifiStatus {
-        configured: false,
-        ssid: None,
-        validation: WifiValidationState::NeverValidated,
-    }
+    WifiStatus { ssid: None }
 }
 
 pub fn boot_status(
@@ -84,11 +80,7 @@ pub fn production_fault(
         return Some(DeviceFault::MissingWifiConfig);
     }
 
-    match config.wifi_validation {
-        WifiValidationState::Validated => None,
-        WifiValidationState::NeverValidated => Some(DeviceFault::WifiNeverValidated),
-        WifiValidationState::ValidationFailed => Some(DeviceFault::WifiValidationFailed),
-    }
+    None
 }
 
 #[cfg(test)]
@@ -104,11 +96,10 @@ mod tests {
         })
     }
 
-    fn production_config(validation: WifiValidationState) -> StoredDeviceConfig {
+    fn production_config() -> StoredDeviceConfig {
         StoredDeviceConfig {
             mode: DeviceMode::Production,
             wifi: Some(WifiCredentials::new("pendulum-net", "password").unwrap()),
-            wifi_validation: validation,
         }
     }
 
@@ -130,7 +121,7 @@ mod tests {
     #[test]
     fn production_requires_calibration() {
         let status = boot_status(
-            &RecordLoad::Valid(production_config(WifiValidationState::Validated)),
+            &RecordLoad::Valid(production_config()),
             &RecordLoad::Missing,
         );
         assert_eq!(status.state, DeviceState::Fault);
@@ -138,29 +129,22 @@ mod tests {
     }
 
     #[test]
-    fn production_requires_validated_wifi() {
+    fn production_requires_wifi_config() {
         let status = boot_status(
-            &RecordLoad::Valid(production_config(WifiValidationState::NeverValidated)),
+            &RecordLoad::Valid(StoredDeviceConfig {
+                mode: DeviceMode::Production,
+                wifi: None,
+            }),
             &valid_calibration(),
         );
         assert_eq!(status.state, DeviceState::Fault);
-        assert_eq!(status.fault, Some(DeviceFault::WifiNeverValidated));
-    }
-
-    #[test]
-    fn production_faults_when_last_wifi_validation_failed() {
-        let status = boot_status(
-            &RecordLoad::Valid(production_config(WifiValidationState::ValidationFailed)),
-            &valid_calibration(),
-        );
-        assert_eq!(status.state, DeviceState::Fault);
-        assert_eq!(status.fault, Some(DeviceFault::WifiValidationFailed));
+        assert_eq!(status.fault, Some(DeviceFault::MissingWifiConfig));
     }
 
     #[test]
     fn valid_production_boot_runs() {
         let status = boot_status(
-            &RecordLoad::Valid(production_config(WifiValidationState::Validated)),
+            &RecordLoad::Valid(production_config()),
             &valid_calibration(),
         );
         assert_eq!(status.state, DeviceState::Running);

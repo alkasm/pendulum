@@ -103,7 +103,7 @@ fn checksum(magic: u32, version: u16, payload_len: u16, payload: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DeviceMode, StoredDeviceConfig, WifiValidationState};
+    use crate::{DeviceMode, StoredDeviceConfig};
 
     const MAGIC: u32 = u32::from_le_bytes(*b"CONF");
     const VERSION: u16 = 1;
@@ -120,7 +120,6 @@ mod tests {
         let config = StoredDeviceConfig {
             mode: DeviceMode::Production,
             wifi: None,
-            wifi_validation: WifiValidationState::Validated,
         };
 
         let mut slot = [0_u8; SETTINGS_SLOT_SIZE];

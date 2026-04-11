@@ -20,7 +20,7 @@ use bringup::{
 use command::{CommandPort, write_response};
 use esp_hal::{
     Blocking,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig},
+    gpio::{Level, Output, OutputConfig},
     i2c::master::I2c,
     main,
     mcpwm::{
@@ -28,7 +28,7 @@ use esp_hal::{
         operator::{PwmActions, PwmPin, PwmPinConfig, PwmUpdateMethod, UpdateAction},
         timer::PwmWorkingMode,
     },
-    peripherals::{GPIO5, GPIO34, MCPWM0},
+    peripherals::{GPIO5, MCPWM0},
     rng::Rng,
     timer::timg::TimerGroup,
     time::{Duration, Instant, Rate},
@@ -41,12 +41,12 @@ use pendulum_lib::{
     device::{boot_status, production_fault},
     pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
     settings_record::RecordLoad,
-    CalibrationStatus, CurrentTelemetry, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
+    CalibrationStatus, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
     DeviceFault, DeviceInfo, DeviceMode, DeviceRequest, DeviceResponse, DeviceState,
     DeviceStatus, FirmwareName, FirmwareVersion, HallMeasurement, HallTelemetry,
     PendulumControlMode, PendulumControlTelemetry, PendulumEstimateMeasurement,
     PendulumEstimateTelemetry, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
-    WifiProbeResult, WifiValidationReport, WifiValidationState,
+    WifiValidationReport,
 };
 use settings::SettingsStorage;
 use uom::si::length::millimeter;
@@ -144,7 +144,6 @@ type PwmPinB<'a, const OP: u8> = PwmPin<'a, MCPWM0<'a>, OP, false>;
 
 struct PwmMotorDrive<'a> {
     enable: Output<'a>,
-    diag: Input<'a>,
     uh: PwmPinA<'a, 0>,
     ul: PwmPinB<'a, 0>,
     vh: PwmPinA<'a, 1>,
@@ -279,7 +278,6 @@ fn main() -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     let mut motor_drive = PwmMotorDrive::new(
         peripherals.GPIO5,
-        peripherals.GPIO34,
         uh,
         ul,
         vh,
@@ -464,29 +462,14 @@ impl<'d> App<'d> {
 
         let mut pending_config = self.config.clone();
         pending_config.wifi = Some(credentials.clone());
-        pending_config.wifi_validation = WifiValidationState::NeverValidated;
         if self.settings.save_device_config(&pending_config).is_err() {
             self.respond_error(DeviceCommandError::PersistenceFailed);
             return;
         }
 
-        let result = self.wifi_validator.validate(&credentials, &self.delay);
-        let mut finalized_config = pending_config.clone();
-        finalized_config.wifi_validation = if matches!(result, WifiProbeResult::Success { .. }) {
-            WifiValidationState::Validated
-        } else {
-            WifiValidationState::ValidationFailed
-        };
-
-        if self.settings.save_device_config(&finalized_config).is_err() {
-            self.config = pending_config;
-            self.sync_status();
-            self.respond_error(DeviceCommandError::PersistenceFailed);
-            return;
-        }
-
-        self.config = finalized_config;
+        self.config = pending_config;
         self.sync_status();
+        let result = self.wifi_validator.validate(&credentials, &self.delay);
         self.respond(DeviceResponse::WifiValidation(WifiValidationReport {
             status: self.config.wifi_status(),
             result,
@@ -501,7 +484,6 @@ impl<'d> App<'d> {
 
         let mut next_config = self.config.clone();
         next_config.wifi = None;
-        next_config.wifi_validation = WifiValidationState::NeverValidated;
         if self.settings.save_device_config(&next_config).is_err() {
             self.respond_error(DeviceCommandError::PersistenceFailed);
             return;
@@ -1091,7 +1073,6 @@ impl<'a> PwmMotorDrive<'a> {
     #[allow(clippy::too_many_arguments)]
     fn new(
         enable: GPIO5<'a>,
-        diag: GPIO34<'a>,
         uh: PwmPinA<'a, 0>,
         ul: PwmPinB<'a, 0>,
         vh: PwmPinA<'a, 1>,
@@ -1101,7 +1082,6 @@ impl<'a> PwmMotorDrive<'a> {
     ) -> Self {
         Self {
             enable: Output::new(enable, Level::Low, OutputConfig::default()),
-            diag: Input::new(diag, InputConfig::default()),
             uh,
             ul,
             vh,
@@ -1117,10 +1097,6 @@ impl<'a> PwmMotorDrive<'a> {
 
     fn disable(&mut self) {
         self.enable.set_low();
-    }
-
-    fn diag_is_high(&self) -> bool {
-        self.diag.is_high()
     }
 
     fn coast(&mut self) {
@@ -1421,23 +1397,6 @@ fn electrical_sector(electrical_angle_deg: f32) -> u8 {
 
 fn sector_center_deg(electrical_angle_deg: f32) -> f32 {
     electrical_sector(electrical_angle_deg) as f32 * 60.0 + 30.0
-}
-
-fn current_telemetry_from_sample(sample: CurrentSample) -> CurrentTelemetry {
-    CurrentTelemetry {
-        mcp6021_counts: sample.mcp6021.counts,
-        mcp6021_delta_counts: sample.mcp6021.delta_counts,
-        mcp6021_volts: sample.mcp6021.volts,
-        ina_u_counts: sample.ina_u.counts,
-        ina_u_delta_counts: sample.ina_u.delta_counts,
-        ina_u_amps: sample.ina_u.amps,
-        ina_v_counts: sample.ina_v.counts,
-        ina_v_delta_counts: sample.ina_v.delta_counts,
-        ina_v_amps: sample.ina_v.amps,
-        ina_w_counts: sample.ina_w.counts,
-        ina_w_delta_counts: sample.ina_w.delta_counts,
-        ina_w_amps: sample.ina_w.amps,
-    }
 }
 
 fn max_phase_current_amps(sample: &CurrentSample) -> f32 {
