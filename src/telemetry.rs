@@ -1,6 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex};
 
-pub use penproto::RuntimeTelemetryFrame as TelemetryFrame;
+pub use crate::RuntimeTelemetryFrame as TelemetryFrame;
 
 #[derive(Clone)]
 pub struct TelemetryStream {

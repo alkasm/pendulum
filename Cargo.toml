@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["penproto", "pengui", "penproxy", "penfw", "pensim"]
+members = ["pengui", "penproxy", "penfw", "pensim"]
 default-members = [".", "pengui", "penproxy", "pensim"]
 resolver = "2"
 
@@ -18,7 +18,6 @@ std = ["dep:bevy_ecs", "dep:postcard", "dep:serialport", "serde/std"]
 
 [dependencies]
 bevy_ecs = { version = "0.15", optional = true }
-penproto = { path = "penproto" }
 postcard = { version = "1.1", features = ["alloc"], optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serialport = { version = "4.8", optional = true }

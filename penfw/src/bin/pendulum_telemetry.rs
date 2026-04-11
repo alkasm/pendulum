@@ -13,12 +13,11 @@ use bringup::{
 };
 use esp_hal::{Blocking, i2c::master::I2c, main};
 use libm::atan2f;
-use penproto::{
+use pendulum_lib::{
     CurrentTelemetry, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
     PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
     PendulumTimingTelemetry, TelemetryPacket,
 };
-
 use hw::GY521_DEFAULT_I2C_ADDR;
 
 const SAMPLE_PERIOD_MS: u32 = 20;

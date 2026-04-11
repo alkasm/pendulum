@@ -1,5 +1,4 @@
-use penproto::{HallTelemetry, PendulumEstimateTelemetry, TelemetryPacket};
-use pendulum_lib::{packet, transport};
+use pendulum_lib::{HallTelemetry, PendulumEstimateTelemetry, TelemetryPacket, packet, transport};
 
 fn main() {
     let addr = std::env::args()

@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use penproto::TelemetryPacket;
+use crate::TelemetryPacket;
 
 use crate::{
     packet::{self, PacketReceiver, PacketStream},

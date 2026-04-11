@@ -1,6 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex};
 
-pub use penproto::TelemetryPacket;
+pub use crate::TelemetryPacket;
 
 #[derive(Clone)]
 pub struct PacketStream {

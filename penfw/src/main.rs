@@ -37,8 +37,6 @@ use motor_calibration::{
 use pendulum_lib::{
     config::default_pendulum,
     pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
-};
-use penproto::{
     CurrentTelemetry, HallMeasurement, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
     PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
     PendulumTimingTelemetry, TelemetryPacket,

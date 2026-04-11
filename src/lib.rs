@@ -5,6 +5,9 @@ pub mod controller;
 pub mod imu;
 pub mod motor;
 pub mod pendulum;
+pub mod protocol;
+
+pub use protocol::*;
 
 #[cfg(feature = "std")]
 pub mod packet;

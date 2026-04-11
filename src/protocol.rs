@@ -1,5 +1,3 @@
-#![no_std]
-
 use serde::{Deserialize, Serialize};
 use uom::si::f64::{Angle, AngularVelocity, ElectricCurrent, Time, Torque};
 

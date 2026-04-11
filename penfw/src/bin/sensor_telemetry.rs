@@ -15,7 +15,7 @@ use bringup::{
 use esp_hal::{Blocking, i2c::master::I2c, main};
 use hw::{CurrentSensor, GY521_DEFAULT_I2C_ADDR, Tmc6300};
 use libm::atan2f;
-use penproto::{
+use pendulum_lib::{
     CurrentTelemetry, HallMeasurement, HallTelemetry, ImuMeasurement, ImuTelemetry,
     SensorTelemetryFrame, TelemetryPacket,
 };
