@@ -74,7 +74,9 @@ enum RunCommand {
 
 #[derive(ValueEnum, Clone, Debug)]
 enum ModeArg {
+    #[value(alias = "mfg")]
     Manufacturing,
+    #[value(alias = "prod")]
     Production,
 }
 
@@ -274,6 +276,25 @@ mod tests {
     #[test]
     fn parses_mode_set_command() {
         let cli = Cli::try_parse_from(["pendev", "mode", "set", "production"]).unwrap();
+        match cli.command {
+            Command::Mode { command: ModeCommand::Set { mode } } => {
+                assert!(matches!(mode, ModeArg::Production));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mode_set_aliases() {
+        let cli = Cli::try_parse_from(["pendev", "mode", "set", "mfg"]).unwrap();
+        match cli.command {
+            Command::Mode { command: ModeCommand::Set { mode } } => {
+                assert!(matches!(mode, ModeArg::Manufacturing));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let cli = Cli::try_parse_from(["pendev", "mode", "set", "prod"]).unwrap();
         match cli.command {
             Command::Mode { command: ModeCommand::Set { mode } } => {
                 assert!(matches!(mode, ModeArg::Production));
