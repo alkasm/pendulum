@@ -1,20 +1,23 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 esp_bootloader_esp_idf::esp_app_desc!();
-
-use core::fmt::Write;
-
 #[path = "bringup.rs"]
 mod bringup;
+mod command;
 #[path = "hw/mod.rs"]
 mod hw;
 mod motor_calibration;
+mod settings;
+mod wifi;
 
 use bringup::{
     HALL_SENSOR_ADDR, i2c_device_present, init_console, init_delay, init_primary_i2c,
-    max_clock_config, write_bytes_buffered,
+    max_clock_config,
 };
+use command::{CommandPort, write_response};
 use esp_hal::{
     Blocking,
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
@@ -26,26 +29,30 @@ use esp_hal::{
         timer::PwmWorkingMode,
     },
     peripherals::{GPIO5, GPIO34, MCPWM0},
+    rng::Rng,
+    timer::timg::TimerGroup,
     time::{Duration, Instant, Rate},
+    uart::Uart,
 };
 use hw::{CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR};
 use libm::{atan2f, sinf, sqrtf};
-use motor_calibration::{
-    StoredMotorCalibration,
-    load_motor_calibration,
-};
 use pendulum_lib::{
     config::default_pendulum,
+    device::{boot_status, production_fault},
     pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
-    CurrentTelemetry, HallMeasurement, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
-    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
-    PendulumTimingTelemetry, TelemetryPacket,
+    settings_record::RecordLoad,
+    CalibrationStatus, CurrentTelemetry, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
+    DeviceFault, DeviceInfo, DeviceMode, DeviceRequest, DeviceResponse, DeviceState,
+    DeviceStatus, FirmwareName, FirmwareVersion, HallMeasurement, HallTelemetry,
+    PendulumControlMode, PendulumControlTelemetry, PendulumEstimateMeasurement,
+    PendulumEstimateTelemetry, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
+    WifiProbeResult, WifiValidationReport, WifiValidationState,
 };
+use settings::SettingsStorage;
 use uom::si::length::millimeter;
+use wifi::WifiValidator;
 
 const CONTROL_PERIOD_MS: u32 = 5;
-const TELEMETRY_PERIOD_MS: u32 = 20;
-const FRAME_BUF_LEN: usize = 512;
 const BASELINE_SAMPLES: u32 = 64;
 const MAX_COMMAND_TORQUE_NM: f32 = 0.030;
 const MAX_PHASE_CURRENT_A: f32 = 1.2;
@@ -105,6 +112,7 @@ const MAX_ACCEL_CORRECTION_STEP_DEG: f32 = 2.0;
 const MAX_ACCEL_CORRECTION_ERROR_DEG: f32 = 35.0;
 const MIN_ACCEL_GRAVITY_G: f32 = 0.75;
 const MAX_ACCEL_GRAVITY_G: f32 = 1.25;
+const SERVICE_POLL_DELAY_MS: u32 = 10;
 
 #[derive(Clone, Copy)]
 enum ImuProbeError {
@@ -180,6 +188,29 @@ struct ImuEstimatorState {
     filtered_theta_deg: Option<f32>,
 }
 
+struct App<'d> {
+    serial: Uart<'d, Blocking>,
+    delay: esp_hal::delay::Delay,
+    settings: SettingsStorage,
+    command_port: CommandPort,
+    wifi_validator: WifiValidator<'d>,
+    current_sensor: CurrentSensor<'d>,
+    motor_drive: PwmMotorDrive<'d>,
+    i2c: I2c<'d, Blocking>,
+    hall_configured: bool,
+    imu_verified: bool,
+    imu_awake: bool,
+    imu_estimator: ImuEstimatorState,
+    control_state: ControlState,
+    geometry: PendulumGeometry,
+    control_period: Duration,
+    last_loop_start: Option<Instant>,
+    config: StoredDeviceConfig,
+    calibration: Option<HallElectricalCalibration>,
+    calibration_status: CalibrationStatus,
+    status: DeviceStatus,
+}
+
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     esp_hal::system::software_reset()
@@ -188,8 +219,8 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
-    let flash = peripherals.FLASH;
-    let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
+    esp_alloc::heap_allocator!(size: 72 * 1024);
+    let serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
     let mut current_sensor = CurrentSensor::new(
         peripherals.ADC1,
@@ -198,6 +229,22 @@ fn main() -> ! {
         peripherals.GPIO36,
         peripherals.GPIO39,
     );
+    let mut settings = SettingsStorage::new();
+    let config_record = settings.load_device_config().unwrap_or(RecordLoad::Corrupt);
+    let calibration_record = settings
+        .load_motor_calibration_record()
+        .unwrap_or(RecordLoad::Corrupt);
+    let status = boot_status(&config_record, &calibration_record);
+    let calibration_status = status.calibration.clone();
+    let config = match config_record {
+        RecordLoad::Valid(config) => config,
+        RecordLoad::Missing | RecordLoad::Corrupt => StoredDeviceConfig::default(),
+    };
+    let calibration = match calibration_record {
+        RecordLoad::Valid(calibration) if calibration.is_valid() => Some(calibration.into()),
+        RecordLoad::Missing | RecordLoad::Valid(_) | RecordLoad::Corrupt => None,
+    };
+
     let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_mhz(160))
         .expect("failed to configure MCPWM clock");
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
@@ -240,107 +287,411 @@ fn main() -> ! {
         wh,
         wl,
     );
-    let mut i2c = init_primary_i2c(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22);
-    let mut frame_buf = [0_u8; FRAME_BUF_LEN];
-    let mut seq = 0_u32;
-    let mut hall_configured = false;
-    let mut imu_verified = false;
-    let mut imu_awake = false;
-    let mut imu_estimator = ImuEstimatorState::new();
-    let mut control_state = ControlState::new();
-    let pendulum = default_pendulum();
-    let control_period = Duration::from_millis(CONTROL_PERIOD_MS as u64);
-    let telemetry_divider = (TELEMETRY_PERIOD_MS / CONTROL_PERIOD_MS).max(1);
-    let mut last_loop_start: Option<Instant> = None;
-
+    let i2c = init_primary_i2c(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22);
     let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
     motor_drive.disable();
     motor_drive.coast();
-    let actuator_calibration = match load_motor_calibration(flash) {
-        Ok(Some(calibration)) => {
-            let _ = writeln!(
-                serial,
-                "motor calibration loaded dir={:+.0} offset={:.2}deg torque={:+.0}\r",
-                calibration.direction_sign,
-                calibration.electrical_offset_deg,
-                calibration.torque_sign,
-            );
-            let _ = serial.flush();
-            Some(calibration.into())
-        }
-        _ => {
-            let _ = writeln!(serial, "motor calibration missing; running startup calibration\r");
-            let _ = serial.flush();
-            calibrate_hall_electrical_cycle(
-                &mut i2c,
-                &mut hall_configured,
-                &delay,
-                &mut motor_drive,
-            )
-            .and_then(|calibration| {
-                refine_torque_phase_offset(
-                    &mut i2c,
-                    &mut hall_configured,
-                    &delay,
-                    &mut motor_drive,
-                    calibration,
-                )
-                .or(Some(calibration))
-            })
-        }
+    let timer_group = TimerGroup::new(peripherals.TIMG0);
+    let wifi_validator =
+        WifiValidator::new(timer_group.timer0, Rng::new(peripherals.RNG), peripherals.WIFI)
+        .expect("failed to initialize Wi-Fi validator");
+
+    let mut app = App {
+        serial,
+        delay,
+        settings,
+        command_port: CommandPort::new(),
+        wifi_validator,
+        current_sensor,
+        motor_drive,
+        i2c,
+        hall_configured: false,
+        imu_verified: false,
+        imu_awake: false,
+        imu_estimator: ImuEstimatorState::new(),
+        control_state: ControlState::new(),
+        geometry: default_pendulum().geometry,
+        control_period: Duration::from_millis(CONTROL_PERIOD_MS as u64),
+        last_loop_start: None,
+        config,
+        calibration,
+        calibration_status,
+        status,
     };
 
-    loop {
-        let loop_start = Instant::now();
-        let loop_period_us = last_loop_start
-            .map(|previous| (loop_start - previous).as_micros() as u32)
-            .unwrap_or(CONTROL_PERIOD_MS * 1_000);
-        let current_sample = current_sensor.read();
-        let current = current_telemetry_from_sample(current_sample);
-        let hall = read_hall_telemetry(&mut i2c, &mut hall_configured);
-        let estimate = read_pendulum_estimate(
-            &mut i2c,
-            &mut imu_verified,
-            &mut imu_awake,
-            &mut imu_estimator,
-            &pendulum.geometry,
-        );
-        let control = update_control_loop(
-            &mut control_state,
-            &mut motor_drive,
-            actuator_calibration,
-            &hall,
-            &estimate,
-            &current_sample,
-        );
-        let work_time_us = loop_start.elapsed().as_micros() as u32;
+    app.run()
+}
 
-        if seq % telemetry_divider == 0 {
-            let frame = PendulumTelemetryFrame {
-                seq,
-                uptime_ms: seq.saturating_mul(CONTROL_PERIOD_MS),
-                timing: PendulumTimingTelemetry {
-                    loop_period_us,
-                    work_time_us,
-                },
-                motor_driver_diag_high: motor_drive.diag_is_high(),
-                current,
-                hall,
-                estimate,
-                control,
-            };
-            let packet = TelemetryPacket::Pendulum(frame);
+impl<'d> App<'d> {
+    fn run(&mut self) -> ! {
+        loop {
+            match self.status.state {
+                DeviceState::Service => self.service_loop(),
+                DeviceState::Running => self.running_loop(),
+                DeviceState::Fault => self.fault_loop(),
+                DeviceState::Boot => {
+                    self.transition_to_service();
+                }
+                DeviceState::Calibrating => {
+                    self.transition_to_service();
+                }
+            }
+        }
+    }
 
-            if let Ok(encoded) = postcard::to_slice_cobs(&packet, &mut frame_buf) {
-                write_bytes_buffered(&mut serial, encoded);
+    fn service_loop(&mut self) {
+        self.transition_to_service();
+
+        while matches!(self.status.state, DeviceState::Service) {
+            if let Some(request) = self.command_port.poll(&mut self.serial) {
+                self.handle_request(request);
+                continue;
+            }
+
+            self.delay.delay_millis(SERVICE_POLL_DELAY_MS);
+        }
+    }
+
+    fn fault_loop(&mut self) {
+        self.disable_outputs();
+        self.status.control_mode = None;
+
+        while matches!(self.status.state, DeviceState::Fault) {
+            if let Some(request) = self.command_port.poll(&mut self.serial) {
+                self.handle_request(request);
+                continue;
+            }
+
+            self.delay.delay_millis(SERVICE_POLL_DELAY_MS);
+        }
+    }
+
+    fn running_loop(&mut self) {
+        while matches!(self.status.state, DeviceState::Running) {
+            let loop_start = Instant::now();
+            let current_sample = self.current_sensor.read();
+            let hall = read_hall_telemetry(&mut self.i2c, &mut self.hall_configured);
+            let estimate = read_pendulum_estimate(
+                &mut self.i2c,
+                &mut self.imu_verified,
+                &mut self.imu_awake,
+                &mut self.imu_estimator,
+                &self.geometry,
+            );
+            let control = update_control_loop(
+                &mut self.control_state,
+                &mut self.motor_drive,
+                self.calibration,
+                &hall,
+                &estimate,
+                &current_sample,
+            );
+            self.status.control_mode = Some(control.mode);
+            self.status.fault = None;
+
+            if let Some(request) = self.command_port.poll(&mut self.serial) {
+                self.handle_request(request);
+            }
+
+            if !matches!(self.status.state, DeviceState::Running) {
+                return;
+            }
+
+            while loop_start.elapsed() < self.control_period {
+                core::hint::spin_loop();
+            }
+            self.last_loop_start = Some(loop_start);
+        }
+    }
+
+    fn handle_request(&mut self, request: DeviceRequest) {
+        match request {
+            DeviceRequest::GetInfo => self.respond(DeviceResponse::Info(self.device_info())),
+            DeviceRequest::GetStatus => {
+                self.sync_status();
+                self.respond(DeviceResponse::Status(self.status.clone()));
+            }
+            DeviceRequest::GetWifiStatus => {
+                if self.status.mode != DeviceMode::Manufacturing {
+                    self.respond_error(DeviceCommandError::UnsupportedInCurrentMode);
+                } else {
+                    self.respond(DeviceResponse::WifiStatus(self.config.wifi_status()));
+                }
+            }
+            DeviceRequest::GetCalibrationStatus => {
+                if self.status.mode != DeviceMode::Manufacturing {
+                    self.respond_error(DeviceCommandError::UnsupportedInCurrentMode);
+                } else {
+                    self.respond(DeviceResponse::CalibrationStatus(
+                        self.calibration_status.clone(),
+                    ));
+                }
+            }
+            DeviceRequest::SetMode(mode) => self.handle_set_mode(mode),
+            DeviceRequest::SetWifiConfig(credentials) => self.handle_set_wifi_config(credentials),
+            DeviceRequest::ClearWifiConfig => self.handle_clear_wifi_config(),
+            DeviceRequest::ValidateWifi => self.handle_validate_wifi(),
+            DeviceRequest::StartMotorCalibration => self.handle_start_motor_calibration(),
+            DeviceRequest::StartRun => self.handle_start_run(),
+            DeviceRequest::StopRun => self.handle_stop_run(),
+            DeviceRequest::Reboot => self.reboot_with_ack(),
+        }
+    }
+
+    fn handle_set_mode(&mut self, mode: DeviceMode) {
+        if let DeviceMode::Production = mode {
+            if let Some(fault) = production_fault(&self.config, &self.calibration_status) {
+                self.respond_error(DeviceCommandError::ProductionPrecondition(fault));
+                return;
             }
         }
 
-        seq = seq.wrapping_add(1);
-        while loop_start.elapsed() < control_period {
-            core::hint::spin_loop();
+        self.config.mode = mode;
+        self.sync_status();
+        if self.settings.save_device_config(&self.config).is_err() {
+            self.respond_error(DeviceCommandError::PersistenceFailed);
+            return;
         }
-        last_loop_start = Some(loop_start);
+
+        self.reboot_with_ack();
+    }
+
+    fn handle_set_wifi_config(&mut self, credentials: WifiCredentials) {
+        if !self.in_manufacturing_service() {
+            self.respond_error(self.service_mutation_error());
+            return;
+        }
+
+        let mut pending_config = self.config.clone();
+        pending_config.wifi = Some(credentials.clone());
+        pending_config.wifi_validation = WifiValidationState::NeverValidated;
+        if self.settings.save_device_config(&pending_config).is_err() {
+            self.respond_error(DeviceCommandError::PersistenceFailed);
+            return;
+        }
+
+        let result = self.wifi_validator.validate(&credentials, &self.delay);
+        let mut finalized_config = pending_config.clone();
+        finalized_config.wifi_validation = if matches!(result, WifiProbeResult::Success { .. }) {
+            WifiValidationState::Validated
+        } else {
+            WifiValidationState::ValidationFailed
+        };
+
+        if self.settings.save_device_config(&finalized_config).is_err() {
+            self.config = pending_config;
+            self.sync_status();
+            self.respond_error(DeviceCommandError::PersistenceFailed);
+            return;
+        }
+
+        self.config = finalized_config;
+        self.sync_status();
+        self.respond(DeviceResponse::WifiValidation(WifiValidationReport {
+            status: self.config.wifi_status(),
+            result,
+        }));
+    }
+
+    fn handle_clear_wifi_config(&mut self) {
+        if !self.in_manufacturing_service() {
+            self.respond_error(self.service_mutation_error());
+            return;
+        }
+
+        let mut next_config = self.config.clone();
+        next_config.wifi = None;
+        next_config.wifi_validation = WifiValidationState::NeverValidated;
+        if self.settings.save_device_config(&next_config).is_err() {
+            self.respond_error(DeviceCommandError::PersistenceFailed);
+            return;
+        }
+
+        self.config = next_config;
+        self.sync_status();
+        self.respond(DeviceResponse::Ack);
+    }
+
+    fn handle_validate_wifi(&mut self) {
+        if matches!(self.status.state, DeviceState::Running | DeviceState::Calibrating) {
+            self.respond_error(DeviceCommandError::InvalidState);
+            return;
+        }
+
+        let Some(credentials) = self.config.wifi.as_ref() else {
+            self.respond_error(DeviceCommandError::ProductionPrecondition(
+                DeviceFault::MissingWifiConfig,
+            ));
+            return;
+        };
+
+        let result = self.wifi_validator.validate(credentials, &self.delay);
+        self.respond(DeviceResponse::WifiValidation(WifiValidationReport {
+            status: self.config.wifi_status(),
+            result,
+        }));
+    }
+
+    fn handle_start_motor_calibration(&mut self) {
+        if !self.in_manufacturing_service() {
+            self.respond_error(self.service_mutation_error());
+            return;
+        }
+
+        self.disable_outputs();
+        self.status.state = DeviceState::Calibrating;
+        self.status.control_mode = Some(PendulumControlMode::Calibrating);
+
+        let calibration = calibrate_hall_electrical_cycle(
+            &mut self.i2c,
+            &mut self.hall_configured,
+            &self.delay,
+            &mut self.motor_drive,
+        )
+        .and_then(|calibration| {
+            refine_torque_phase_offset(
+                &mut self.i2c,
+                &mut self.hall_configured,
+                &self.delay,
+                &mut self.motor_drive,
+                calibration,
+            )
+            .or(Some(calibration))
+        });
+
+        let Some(calibration) = calibration else {
+            self.transition_to_service();
+            self.respond_error(DeviceCommandError::CalibrationFailed);
+            return;
+        };
+
+        let stored = StoredMotorCalibration {
+            direction_sign: calibration.direction_sign,
+            electrical_offset_deg: wrap_degrees(calibration.electrical_offset_deg),
+            torque_sign: calibration.torque_sign,
+        };
+        if self.settings.save_motor_calibration(&stored).is_err() {
+            self.transition_to_service();
+            self.respond_error(DeviceCommandError::PersistenceFailed);
+            return;
+        }
+
+        self.calibration = Some(calibration);
+        self.calibration_status = CalibrationStatus::Valid;
+        self.transition_to_service();
+        self.respond(DeviceResponse::CalibrationStatus(
+            self.calibration_status.clone(),
+        ));
+    }
+
+    fn handle_start_run(&mut self) {
+        if !self.in_manufacturing_service() {
+            self.respond_error(self.service_mutation_error());
+            return;
+        }
+
+        if let Some(fault) = self.run_precondition_fault() {
+            self.respond_error(DeviceCommandError::ProductionPrecondition(fault));
+            return;
+        }
+
+        self.prepare_for_run();
+        self.respond(DeviceResponse::Ack);
+    }
+
+    fn handle_stop_run(&mut self) {
+        if self.status.mode != DeviceMode::Manufacturing {
+            self.respond_error(DeviceCommandError::UnsupportedInCurrentMode);
+            return;
+        }
+
+        if self.status.state != DeviceState::Running {
+            self.respond_error(DeviceCommandError::InvalidState);
+            return;
+        }
+
+        self.transition_to_service();
+        self.respond(DeviceResponse::Ack);
+    }
+
+    fn prepare_for_run(&mut self) {
+        self.disable_outputs();
+        self.control_state.reset_runtime();
+        self.imu_estimator.reset();
+        self.last_loop_start = None;
+        self.status.state = DeviceState::Running;
+        self.status.fault = None;
+        self.status.control_mode = None;
+        self.sync_status();
+    }
+
+    fn transition_to_service(&mut self) {
+        self.disable_outputs();
+        self.control_state.reset_runtime();
+        self.imu_estimator.reset();
+        self.last_loop_start = None;
+        self.status.state = DeviceState::Service;
+        self.status.fault = None;
+        self.status.control_mode = None;
+        self.sync_status();
+    }
+
+    fn sync_status(&mut self) {
+        self.status.mode = self.config.mode.clone();
+        self.status.wifi = self.config.wifi_status();
+        self.status.calibration = self.calibration_status.clone();
+    }
+
+    fn disable_outputs(&mut self) {
+        self.control_state.disable_motor(&mut self.motor_drive);
+    }
+
+    fn in_manufacturing_service(&self) -> bool {
+        self.status.mode == DeviceMode::Manufacturing && self.status.state == DeviceState::Service
+    }
+
+    fn service_mutation_error(&self) -> DeviceCommandError {
+        if self.status.mode != DeviceMode::Manufacturing {
+            DeviceCommandError::UnsupportedInCurrentMode
+        } else {
+            DeviceCommandError::InvalidState
+        }
+    }
+
+    fn run_precondition_fault(&self) -> Option<DeviceFault> {
+        match self.calibration_status {
+            CalibrationStatus::Missing => Some(DeviceFault::MissingCalibration),
+            CalibrationStatus::Invalid => Some(DeviceFault::InvalidCalibration),
+            CalibrationStatus::Valid => None,
+        }
+    }
+
+    fn device_info(&self) -> DeviceInfo {
+        let mut firmware_name = FirmwareName::new();
+        let _ = firmware_name.push_str(env!("CARGO_PKG_NAME"));
+
+        let mut firmware_version = FirmwareVersion::new();
+        let _ = firmware_version.push_str(env!("CARGO_PKG_VERSION"));
+
+        DeviceInfo {
+            firmware_name,
+            firmware_version,
+            protocol_version: DEVICE_PROTOCOL_VERSION,
+        }
+    }
+
+    fn reboot_with_ack(&mut self) -> ! {
+        self.disable_outputs();
+        write_response(&mut self.serial, &DeviceResponse::Ack);
+        esp_hal::system::software_reset()
+    }
+
+    fn respond(&mut self, response: DeviceResponse) {
+        write_response(&mut self.serial, &response);
+    }
+
+    fn respond_error(&mut self, error: DeviceCommandError) {
+        self.respond(DeviceResponse::Error(error));
     }
 }
 
@@ -357,6 +708,18 @@ impl ControlState {
             uq_v: 0.0,
             motor_enabled: false,
         }
+    }
+
+    fn reset_runtime(&mut self) {
+        self.armed = false;
+        self.arm_ready_samples = 0;
+        self.last_wheel_angle_deg = None;
+        self.last_unwrapped_wheel_angle_deg = None;
+        self.filtered_wheel_speed_dps = 0.0;
+        self.filtered_drive_command = 0.0;
+        self.electrical_angle_deg = 0.0;
+        self.uq_v = 0.0;
+        self.motor_enabled = false;
     }
 
     fn disable_motor(&mut self, motor_drive: &mut PwmMotorDrive<'_>) {

@@ -1,4 +1,4 @@
-firmware-build := "cd penfw && cargo build --release --bin"
+firmware-build := "cd penfw && cargo build -Zbuild-std=core,alloc --release --bin"
 
 pengui:
     cargo build --release -p pengui

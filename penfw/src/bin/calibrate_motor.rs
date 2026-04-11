@@ -8,6 +8,7 @@
 //! binary can reuse the saved values on later boots.
 
 esp_bootloader_esp_idf::esp_app_desc!();
+use esp_alloc as _;
 
 #[path = "../bringup.rs"]
 mod bringup;
@@ -15,6 +16,8 @@ mod bringup;
 mod hw;
 #[path = "../motor_calibration.rs"]
 mod motor_calibration;
+#[path = "../settings.rs"]
+mod settings;
 
 use core::fmt::Write;
 
@@ -90,7 +93,6 @@ struct HallElectricalCalibration {
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
-    let flash = peripherals.FLASH;
     let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
     let mut hall = Tmag5273::new(
@@ -188,7 +190,7 @@ fn main() -> ! {
         torque_sign: calibration.torque_sign,
     };
 
-    match save_motor_calibration(flash, stored) {
+    match save_motor_calibration(stored) {
         Ok(()) => {
             let _ = writeln!(
                 serial,

@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use serde::{Serialize, de::DeserializeOwned};
+
 use crate::TelemetryPacket;
 
 use crate::{
@@ -255,8 +257,7 @@ pub fn write_packet<W>(writer: &mut W, packet: &TelemetryPacket) -> io::Result<(
 where
     W: Write,
 {
-    let encoded = postcard::to_allocvec_cobs(packet).map_err(to_invalid_data_error)?;
-    writer.write_all(&encoded)
+    write_cobs_message(writer, packet)
 }
 
 fn write_frame<W>(writer: &mut W, frame: &TelemetryFrame) -> io::Result<()>
@@ -270,6 +271,23 @@ where
 pub fn read_packet<R>(reader: &mut R) -> io::Result<TelemetryPacket>
 where
     R: BufRead,
+{
+    read_cobs_message(reader)
+}
+
+pub fn write_cobs_message<W, T>(writer: &mut W, message: &T) -> io::Result<()>
+where
+    W: Write,
+    T: Serialize,
+{
+    let encoded = postcard::to_allocvec_cobs(message).map_err(to_invalid_data_error)?;
+    writer.write_all(&encoded)
+}
+
+pub fn read_cobs_message<R, T>(reader: &mut R) -> io::Result<T>
+where
+    R: BufRead,
+    T: DeserializeOwned,
 {
     let mut frame_buf = Vec::new();
     let bytes_read = reader.read_until(0, &mut frame_buf)?;
@@ -297,4 +315,50 @@ fn to_invalid_data_error(error: postcard::Error) -> io::Error {
 
 fn serial_error_to_io_error(error: serialport::Error) -> io::Error {
     io::Error::other(error)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use crate::{
+        DeviceRequest, DeviceResponse, DeviceStatus, CalibrationStatus, DeviceMode, DeviceState,
+        WifiStatus, WifiValidationState,
+    };
+
+    use super::{read_cobs_message, write_cobs_message};
+
+    #[test]
+    fn command_frame_roundtrips() {
+        let request = DeviceRequest::GetStatus;
+        let mut encoded = Vec::new();
+        write_cobs_message(&mut encoded, &request).unwrap();
+
+        let mut reader = Cursor::new(encoded);
+        let decoded = read_cobs_message::<_, DeviceRequest>(&mut reader).unwrap();
+        assert_eq!(decoded, request);
+    }
+
+    #[test]
+    fn response_frame_roundtrips() {
+        let response = DeviceResponse::Status(DeviceStatus {
+            mode: DeviceMode::Manufacturing,
+            state: DeviceState::Service,
+            fault: None,
+            wifi: WifiStatus {
+                configured: false,
+                ssid: None,
+                validation: WifiValidationState::NeverValidated,
+            },
+            calibration: CalibrationStatus::Missing,
+            control_mode: None,
+        });
+
+        let mut encoded = Vec::new();
+        write_cobs_message(&mut encoded, &response).unwrap();
+
+        let mut reader = Cursor::new(encoded);
+        let decoded = read_cobs_message::<_, DeviceResponse>(&mut reader).unwrap();
+        assert_eq!(decoded, response);
+    }
 }

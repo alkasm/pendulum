@@ -302,7 +302,7 @@ This compiles the firmware and produces the ELF at:
 target/xtensa-esp32-none-elf/release/blink
 ```
 
-Under the hood, this runs `cd penfw && cargo build --release --bin blink` using the Xtensa toolchain from the Nix shell.
+Under the hood, this runs `cd penfw && cargo build -Zbuild-std=core,alloc --release --bin blink` using the Xtensa toolchain from the Nix shell.
 
 ### one-time host setup
 
@@ -393,7 +393,7 @@ just flash blink
 Check compilation without flashing:
 
 ```bash
-cd penfw && cargo check --release --bin blink
+cd penfw && cargo check -Zbuild-std=core,alloc --release --bin blink
 ```
 
 Build and flash any other binary (e.g., `serial_echo`, `hall_read`, `imu_read`, `sensor_telemetry`):
