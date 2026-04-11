@@ -8,6 +8,9 @@ use esp_hal::{
 };
 
 const MPU_REG_ACCEL_XOUT_H: u8 = 0x3B;
+const MPU_REG_CONFIG: u8 = 0x1A;
+const MPU_REG_GYRO_CONFIG: u8 = 0x1B;
+const MPU_REG_ACCEL_CONFIG: u8 = 0x1C;
 const MPU_REG_PWR_MGMT_1: u8 = 0x6B;
 const MPU_REG_WHO_AM_I: u8 = 0x75;
 
@@ -15,8 +18,8 @@ pub const GY521_DEFAULT_I2C_ADDR: u8 = 0x68;
 
 const MPU6050_WHO_AM_I_VALUE: u8 = 0x68;
 
-const ACCEL_LSB_PER_G: f32 = 16_384.0;
-const GYRO_LSB_PER_DPS: f32 = 131.0;
+const ACCEL_LSB_PER_G: f32 = 8_192.0;
+const GYRO_LSB_PER_DPS: f32 = 32.8;
 
 pub struct Gy521Imu<'d> {
     i2c: I2c<'d, Blocking>,
@@ -72,7 +75,17 @@ impl<'d> Gy521Imu<'d> {
     pub fn wake(&mut self) -> Result<(), u8> {
         self.i2c
             .write(self.address, &[MPU_REG_PWR_MGMT_1, 0x01])
-            .map_err(|_| MPU_REG_PWR_MGMT_1)
+            .map_err(|_| MPU_REG_PWR_MGMT_1)?;
+        self.i2c
+            .write(self.address, &[MPU_REG_CONFIG, 0x03])
+            .map_err(|_| MPU_REG_CONFIG)?;
+        self.i2c
+            .write(self.address, &[MPU_REG_GYRO_CONFIG, 0x10])
+            .map_err(|_| MPU_REG_GYRO_CONFIG)?;
+        self.i2c
+            .write(self.address, &[MPU_REG_ACCEL_CONFIG, 0x08])
+            .map_err(|_| MPU_REG_ACCEL_CONFIG)?;
+        Ok(())
     }
 
     pub fn read_measurement(&mut self) -> Result<Gy521Measurement, u8> {

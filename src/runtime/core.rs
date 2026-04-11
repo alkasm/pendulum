@@ -11,7 +11,7 @@ use crate::{
     motor::{MotorCommand, MotorTelemetry},
     telemetry::{TelemetryFrame, TelemetrySender},
 };
-use uom::si::{f64::{Angle, Time}, time::second};
+use uom::si::{f64::{Angle, AngularVelocity, Time}, time::second};
 
 pub trait StepRuntime: Send + 'static {
     fn step(&mut self);
@@ -24,9 +24,21 @@ pub struct ControllerResource {
 }
 
 impl ControllerResource {
-    pub fn new(kp: f64, kd: f64) -> Self {
+    pub fn new(
+        kp: f64,
+        kd: f64,
+        kwheel: f64,
+        kwheel_soft_limit: f64,
+        wheel_speed_soft_limit: AngularVelocity,
+    ) -> Self {
         Self {
-            controller: PdController::new(kp, kd),
+            controller: PdController::new(
+                kp,
+                kd,
+                kwheel,
+                kwheel_soft_limit,
+                wheel_speed_soft_limit,
+            ),
         }
     }
 }
@@ -92,7 +104,11 @@ pub fn pd_control_system(
 ) {
     let torque_command = controller
         .controller
-        .torque_command(imu.sample.theta, imu.sample.theta_dot);
+        .torque_command(
+            imu.sample.theta,
+            imu.sample.theta_dot,
+            motor_state.telemetry.wheel_speed,
+        );
     motor_state.command = MotorCommand {
         torque_command,
         observed_wheel_speed: motor_state.telemetry.wheel_speed,

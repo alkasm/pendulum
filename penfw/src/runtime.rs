@@ -57,6 +57,9 @@ impl HardwareRuntime {
         world.insert_resource(ControllerResource::new(
             config.controller_kp,
             config.controller_kd,
+            config.controller_kwheel,
+            config.controller_kwheel_soft_limit,
+            config.controller_wheel_speed_soft_limit,
         ));
         world.insert_resource(ImuReading::default());
         world.insert_resource(MotorState::default());

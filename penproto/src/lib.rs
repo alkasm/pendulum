@@ -105,11 +105,18 @@ pub struct ImuMeasurement {
 pub struct PendulumTelemetryFrame {
     pub seq: u32,
     pub uptime_ms: u32,
+    pub timing: PendulumTimingTelemetry,
     pub motor_driver_diag_high: bool,
     pub current: CurrentTelemetry,
     pub hall: HallTelemetry,
     pub estimate: PendulumEstimateTelemetry,
     pub control: PendulumControlTelemetry,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PendulumTimingTelemetry {
+    pub loop_period_us: u32,
+    pub work_time_us: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -130,8 +137,12 @@ pub struct PendulumEstimateMeasurement {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PendulumControlTelemetry {
     pub mode: PendulumControlMode,
+    pub theta_error_deg: f32,
     pub torque_command_nm: f32,
+    pub raw_drive_command: f32,
     pub drive_command: f32,
+    pub direction_sign: f32,
+    pub torque_sign: f32,
     pub electrical_angle_deg: f32,
     pub uq_v: f32,
     pub wheel_angle_deg: f32,

@@ -4,6 +4,8 @@ use pendulum_lib::{
     transport,
 };
 
+const DEFAULT_SERIAL_PORT: &str = "/dev/cu.usbserial-110";
+
 #[derive(Parser)]
 #[command(name = "penproxy")]
 struct Cli {
@@ -24,7 +26,7 @@ enum SourceCommand {
         upstream: String,
     },
     Serial {
-        #[arg(long)]
+        #[arg(long, default_value = DEFAULT_SERIAL_PORT)]
         port: String,
 
         #[arg(long, default_value_t = transport::DEFAULT_TELEMETRY_SERIAL_BAUD)]

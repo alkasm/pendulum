@@ -4,7 +4,10 @@ mod flash
 default:
     @just --list
 
-capture_pendulum port baud="115200" bind="127.0.0.1:7001":
+diagnose port="/dev/cu.usbserial-110" baud="115200" bind="127.0.0.1:7001" lines="20":
+    ./scripts/capture_pendulum.sh {{port}} {{baud}} {{bind}} {{lines}}
+
+capture port="/dev/cu.usbserial-110" baud="115200" bind="127.0.0.1:7001":
     ./scripts/capture_pendulum.sh {{port}} {{baud}} {{bind}}
 
 notebook:

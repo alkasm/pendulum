@@ -15,7 +15,8 @@ use esp_hal::{Blocking, i2c::master::I2c, main};
 use libm::atan2f;
 use penproto::{
     CurrentTelemetry, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
-    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame, TelemetryPacket,
+    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
+    PendulumTimingTelemetry, TelemetryPacket,
 };
 
 use hw::GY521_DEFAULT_I2C_ADDR;
@@ -72,14 +73,22 @@ fn main() -> ! {
         let frame = PendulumTelemetryFrame {
             seq,
             uptime_ms: seq.saturating_mul(SAMPLE_PERIOD_MS),
+            timing: PendulumTimingTelemetry {
+                loop_period_us: SAMPLE_PERIOD_MS * 1_000,
+                work_time_us: 0,
+            },
             motor_driver_diag_high: false,
             current: EMPTY_CURRENT,
             hall: HallTelemetry::Missing,
             estimate,
             control: PendulumControlTelemetry {
                 mode: PendulumControlMode::Idle,
+                theta_error_deg: 0.0,
                 torque_command_nm: 0.0,
+                raw_drive_command: 0.0,
                 drive_command: 0.0,
+                direction_sign: 0.0,
+                torque_sign: 0.0,
                 electrical_angle_deg: 0.0,
                 uq_v: 0.0,
                 wheel_angle_deg: 0.0,

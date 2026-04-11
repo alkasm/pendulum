@@ -3,6 +3,7 @@ use crate::pendulum::{
     PendulumHardware, Point2, Point3, RightTriangularBody,
 };
 use uom::si::{
+    angular_velocity::degree_per_second,
     angular_velocity::radian_per_second,
     f64::{AngularVelocity, Length, Mass, MomentOfInertia, Time, Torque},
     length::{meter, millimeter},
@@ -29,7 +30,7 @@ pub fn default_flywheel_mass() -> Mass {
 }
 
 pub fn default_flywheel_radius() -> Length {
-    Length::new::<millimeter>(22.5)
+    Length::new::<millimeter>(38.0)
 }
 
 pub fn default_flywheel_inertia() -> MomentOfInertia {
@@ -84,6 +85,9 @@ pub fn default_pendulum() -> Pendulum {
 pub struct RuntimeConfig {
     pub controller_kp: f64,
     pub controller_kd: f64,
+    pub controller_kwheel: f64,
+    pub controller_kwheel_soft_limit: f64,
+    pub controller_wheel_speed_soft_limit: AngularVelocity,
     pub dt: Time,
     pub max_motor_torque: Torque,
     pub motor_no_load_speed: AngularVelocity,
@@ -95,8 +99,11 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             controller_kp: 0.22,
-            controller_kd: 0.001,
-            dt: Time::new::<second>(0.01),
+            controller_kd: 0.007,
+            controller_kwheel: 0.00050,
+            controller_kwheel_soft_limit: 0.00150,
+            controller_wheel_speed_soft_limit: AngularVelocity::new::<degree_per_second>(550.0),
+            dt: Time::new::<second>(0.005),
             // Datasheet stall/start torque: 320 gf*cm ~= 0.031 N*m.
             max_motor_torque: Torque::new::<newton_meter>(0.031),
             // Datasheet no-load speed: 2000 rpm ~= 209.4 rad/s.

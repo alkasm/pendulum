@@ -3,14 +3,17 @@
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+use core::fmt::Write;
+
 #[path = "bringup.rs"]
 mod bringup;
 #[path = "hw/mod.rs"]
 mod hw;
+mod motor_calibration;
 
 use bringup::{
     HALL_SENSOR_ADDR, i2c_device_present, init_console, init_delay, init_primary_i2c,
-    max_clock_config, write_bytes,
+    max_clock_config, write_bytes_buffered,
 };
 use esp_hal::{
     Blocking,
@@ -23,42 +26,51 @@ use esp_hal::{
         timer::PwmWorkingMode,
     },
     peripherals::{GPIO5, GPIO34, MCPWM0},
-    time::Rate,
+    time::{Duration, Instant, Rate},
 };
 use hw::{CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR};
 use libm::{atan2f, sinf, sqrtf};
+use motor_calibration::{
+    StoredMotorCalibration,
+    load_motor_calibration,
+};
 use pendulum_lib::{
     config::default_pendulum,
     pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
 };
 use penproto::{
     CurrentTelemetry, HallMeasurement, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
-    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame, TelemetryPacket,
+    PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
+    PendulumTimingTelemetry, TelemetryPacket,
 };
 use uom::si::length::millimeter;
 
 const CONTROL_PERIOD_MS: u32 = 5;
+const TELEMETRY_PERIOD_MS: u32 = 20;
 const FRAME_BUF_LEN: usize = 512;
 const BASELINE_SAMPLES: u32 = 64;
 const MAX_COMMAND_TORQUE_NM: f32 = 0.030;
 const MAX_PHASE_CURRENT_A: f32 = 1.2;
-const ARM_ANGLE_DEG: f32 = 25.0;
-const ARM_RATE_DPS: f32 = 30.0;
+const ARM_ANGLE_DEG: f32 = 12.0;
+const ARM_RATE_DPS: f32 = 20.0;
 const ARM_SAMPLE_TARGET: u16 = 3;
 const CAPTURE_ANGLE_DEG: f32 = 60.0;
-const DRIVE_DEADBAND: f32 = 0.02;
-const DRIVE_IDLE_EPSILON: f32 = 0.005;
-const MAX_DRIVE_STEP_PER_TICK: f32 = 0.20;
-const MAX_DRIVE_REVERSAL_STEP_PER_TICK: f32 = 0.60;
-const KP_NM_PER_RAD: f32 = 0.45;
-const KD_NM_PER_RAD_S: f32 = 0.035;
-const KWHEEL_NM_PER_RAD_S: f32 = 0.0001;
+const THETA_TARGET_DEG: f32 = -2.10;
+const DRIVE_DEADBAND: f32 = 0.0;
+const DRIVE_IDLE_EPSILON: f32 = 0.0;
+const MAX_DRIVE_STEP_PER_TICK: f32 = 0.08;
+const MAX_DRIVE_REVERSAL_STEP_PER_TICK: f32 = 0.08;
+const KP_NM_PER_RAD: f32 = 0.22;
+const KD_NM_PER_RAD_S: f32 = 0.007;
+const KWHEEL_NM_PER_RAD_S: f32 = 0.00050;
+const KWHEEL_SOFT_LIMIT_NM_PER_RAD_S: f32 = 0.00150;
+const WHEEL_SPEED_SOFT_LIMIT_DPS: f32 = 550.0;
 
 const PWM_FREQUENCY_HZ: u32 = 32_000;
 const PWM_PERIOD_TICKS: u16 = 2500;
 const DEAD_ZONE: f32 = 0.02;
 const VOLTAGE_POWER_SUPPLY_V: f32 = 5.0;
-const VOLTAGE_LIMIT_V: f32 = 3.6;
+const VOLTAGE_LIMIT_V: f32 = 4.6;
 const MOTOR_POLE_PAIRS: f32 = 7.0;
 const CALIBRATION_VOLTAGE_V: f32 = 1.2;
 const CALIBRATION_WHEEL_SPEED_DPS: f32 = -180.0;
@@ -82,11 +94,14 @@ const TMAG5273_TEMP_ADC_T0: i16 = 17_508;
 const TMAG5273_TEMP_ADC_RES: f32 = 60.1;
 
 const MPU_REG_ACCEL_XOUT_H: u8 = 0x3B;
+const MPU_REG_CONFIG: u8 = 0x1A;
+const MPU_REG_GYRO_CONFIG: u8 = 0x1B;
+const MPU_REG_ACCEL_CONFIG: u8 = 0x1C;
 const MPU_REG_PWR_MGMT_1: u8 = 0x6B;
 const MPU_REG_WHO_AM_I: u8 = 0x75;
 const MPU6050_WHO_AM_I_VALUE: u8 = 0x68;
-const ACCEL_LSB_PER_G: f32 = 16_384.0;
-const GYRO_LSB_PER_DPS: f32 = 131.0;
+const ACCEL_LSB_PER_G: f32 = 8_192.0;
+const GYRO_LSB_PER_DPS: f32 = 32.8;
 const ACCEL_CORRECTION_GAIN: f32 = 0.08;
 const MAX_ACCEL_CORRECTION_STEP_DEG: f32 = 2.0;
 const MAX_ACCEL_CORRECTION_ERROR_DEG: f32 = 35.0;
@@ -139,6 +154,16 @@ struct HallElectricalCalibration {
     torque_sign: f32,
 }
 
+impl From<StoredMotorCalibration> for HallElectricalCalibration {
+    fn from(value: StoredMotorCalibration) -> Self {
+        Self {
+            direction_sign: value.direction_sign,
+            electrical_offset_deg: value.electrical_offset_deg,
+            torque_sign: value.torque_sign,
+        }
+    }
+}
+
 struct ControlState {
     armed: bool,
     arm_ready_samples: u16,
@@ -165,6 +190,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
+    let flash = peripherals.FLASH;
     let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
     let mut current_sensor = CurrentSensor::new(
@@ -225,12 +251,34 @@ fn main() -> ! {
     let mut imu_estimator = ImuEstimatorState::new();
     let mut control_state = ControlState::new();
     let pendulum = default_pendulum();
+    let control_period = Duration::from_millis(CONTROL_PERIOD_MS as u64);
+    let telemetry_divider = (TELEMETRY_PERIOD_MS / CONTROL_PERIOD_MS).max(1);
+    let mut last_loop_start: Option<Instant> = None;
 
     let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
     motor_drive.disable();
     motor_drive.coast();
-    let actuator_calibration =
-        calibrate_hall_electrical_cycle(&mut i2c, &mut hall_configured, &delay, &mut motor_drive)
+    let actuator_calibration = match load_motor_calibration(flash) {
+        Ok(Some(calibration)) => {
+            let _ = writeln!(
+                serial,
+                "motor calibration loaded dir={:+.0} offset={:.2}deg torque={:+.0}\r",
+                calibration.direction_sign,
+                calibration.electrical_offset_deg,
+                calibration.torque_sign,
+            );
+            let _ = serial.flush();
+            Some(calibration.into())
+        }
+        _ => {
+            let _ = writeln!(serial, "motor calibration missing; running startup calibration\r");
+            let _ = serial.flush();
+            calibrate_hall_electrical_cycle(
+                &mut i2c,
+                &mut hall_configured,
+                &delay,
+                &mut motor_drive,
+            )
             .and_then(|calibration| {
                 refine_torque_phase_offset(
                     &mut i2c,
@@ -240,9 +288,15 @@ fn main() -> ! {
                     calibration,
                 )
                 .or(Some(calibration))
-            });
+            })
+        }
+    };
 
     loop {
+        let loop_start = Instant::now();
+        let loop_period_us = last_loop_start
+            .map(|previous| (loop_start - previous).as_micros() as u32)
+            .unwrap_or(CONTROL_PERIOD_MS * 1_000);
         let current_sample = current_sensor.read();
         let current = current_telemetry_from_sample(current_sample);
         let hall = read_hall_telemetry(&mut i2c, &mut hall_configured);
@@ -261,24 +315,34 @@ fn main() -> ! {
             &estimate,
             &current_sample,
         );
+        let work_time_us = loop_start.elapsed().as_micros() as u32;
 
-        let frame = PendulumTelemetryFrame {
-            seq,
-            uptime_ms: seq.saturating_mul(CONTROL_PERIOD_MS),
-            motor_driver_diag_high: motor_drive.diag_is_high(),
-            current,
-            hall,
-            estimate,
-            control,
-        };
-        let packet = TelemetryPacket::Pendulum(frame);
+        if seq % telemetry_divider == 0 {
+            let frame = PendulumTelemetryFrame {
+                seq,
+                uptime_ms: seq.saturating_mul(CONTROL_PERIOD_MS),
+                timing: PendulumTimingTelemetry {
+                    loop_period_us,
+                    work_time_us,
+                },
+                motor_driver_diag_high: motor_drive.diag_is_high(),
+                current,
+                hall,
+                estimate,
+                control,
+            };
+            let packet = TelemetryPacket::Pendulum(frame);
 
-        if let Ok(encoded) = postcard::to_slice_cobs(&packet, &mut frame_buf) {
-            write_bytes(&mut serial, encoded);
+            if let Ok(encoded) = postcard::to_slice_cobs(&packet, &mut frame_buf) {
+                write_bytes_buffered(&mut serial, encoded);
+            }
         }
 
         seq = seq.wrapping_add(1);
-        delay.delay_millis(CONTROL_PERIOD_MS);
+        while loop_start.elapsed() < control_period {
+            core::hint::spin_loop();
+        }
+        last_loop_start = Some(loop_start);
     }
 }
 
@@ -459,8 +523,12 @@ fn update_control_loop(
         control_state.electrical_angle_deg = 0.0;
         return PendulumControlTelemetry {
             mode: PendulumControlMode::WaitingForHall,
+            theta_error_deg: 0.0,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: 0.0,
+            torque_sign: 0.0,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -480,8 +548,12 @@ fn update_control_loop(
         control_state.electrical_angle_deg = 0.0;
         return PendulumControlTelemetry {
             mode: PendulumControlMode::Startup,
+            theta_error_deg: 0.0,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: 0.0,
+            torque_sign: 0.0,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -499,8 +571,12 @@ fn update_control_loop(
         control_state.disable_motor(motor_drive);
         return PendulumControlTelemetry {
             mode: PendulumControlMode::WaitingForImu,
+            theta_error_deg: 0.0,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: actuator_calibration.direction_sign,
+            torque_sign: actuator_calibration.torque_sign,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -518,8 +594,12 @@ fn update_control_loop(
         control_state.disable_motor(motor_drive);
         return PendulumControlTelemetry {
             mode: PendulumControlMode::Arming,
+            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: actuator_calibration.direction_sign,
+            torque_sign: actuator_calibration.torque_sign,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -534,8 +614,12 @@ fn update_control_loop(
         control_state.disable_motor(motor_drive);
         return PendulumControlTelemetry {
             mode: PendulumControlMode::CaptureOutOfRange,
+            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: actuator_calibration.direction_sign,
+            torque_sign: actuator_calibration.torque_sign,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -550,8 +634,12 @@ fn update_control_loop(
         control_state.disable_motor(motor_drive);
         return PendulumControlTelemetry {
             mode: PendulumControlMode::CurrentLimited,
+            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
             torque_command_nm: 0.0,
+            raw_drive_command: 0.0,
             drive_command: 0.0,
+            direction_sign: actuator_calibration.direction_sign,
+            torque_sign: actuator_calibration.torque_sign,
             electrical_angle_deg: control_state.electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
@@ -567,6 +655,7 @@ fn update_control_loop(
         estimate_measurement.theta_dot_dps,
         wheel_speed_dps,
     );
+    let theta_error_deg = estimate_measurement.theta_deg - THETA_TARGET_DEG;
     let raw_drive_command = clamp(torque_command_nm / MAX_COMMAND_TORQUE_NM, -1.0, 1.0);
     let drive_target = if raw_drive_command.abs() < DRIVE_DEADBAND {
         0.0
@@ -576,17 +665,32 @@ fn update_control_loop(
     let drive_command = control_state.slew_drive_command(drive_target);
 
     if drive_command.abs() < DRIVE_IDLE_EPSILON {
-        control_state.disable_motor(motor_drive);
+        let electrical_angle_deg =
+            actuator_calibration.electrical_angle_deg(hall_measurement.angle_deg);
+        let (ua_v, ub_v, uc_v) = simplefoc_sine_pwm_phase_voltages(
+            0.0,
+            degrees_to_radians(electrical_angle_deg),
+            VOLTAGE_LIMIT_V,
+        );
+        motor_drive.enable();
+        motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
+        control_state.electrical_angle_deg = electrical_angle_deg;
+        control_state.uq_v = 0.0;
+        control_state.motor_enabled = true;
         return PendulumControlTelemetry {
             mode: PendulumControlMode::Idle,
+            theta_error_deg,
             torque_command_nm,
+            raw_drive_command,
             drive_command,
-            electrical_angle_deg: control_state.electrical_angle_deg,
+            direction_sign: actuator_calibration.direction_sign,
+            torque_sign: actuator_calibration.torque_sign,
+            electrical_angle_deg,
             uq_v: control_state.uq_v,
             wheel_angle_deg,
             wheel_speed_dps,
-            commutation_step: electrical_sector(control_state.electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(control_state.electrical_angle_deg),
+            commutation_step: electrical_sector(electrical_angle_deg),
+            commutation_center_deg: sector_center_deg(electrical_angle_deg),
             motor_enabled: control_state.motor_enabled,
         };
     }
@@ -606,8 +710,12 @@ fn update_control_loop(
 
     PendulumControlTelemetry {
         mode: PendulumControlMode::Active,
+        theta_error_deg,
         torque_command_nm,
+        raw_drive_command,
         drive_command,
+        direction_sign: actuator_calibration.direction_sign,
+        torque_sign: actuator_calibration.torque_sign,
         electrical_angle_deg,
         uq_v,
         wheel_angle_deg,
@@ -980,11 +1088,16 @@ fn max_phase_current_amps(sample: &CurrentSample) -> f32 {
 }
 
 fn pd_torque_command_nm(theta_deg: f32, theta_dot_dps: f32, wheel_speed_dps: f32) -> f32 {
-    let theta_rad = theta_deg * (core::f32::consts::PI / 180.0);
+    let theta_error_deg = theta_deg - THETA_TARGET_DEG;
+    let theta_rad = theta_error_deg * (core::f32::consts::PI / 180.0);
     let theta_dot_rad_s = theta_dot_dps * (core::f32::consts::PI / 180.0);
     let wheel_speed_rad_s = wheel_speed_dps * (core::f32::consts::PI / 180.0);
+    let wheel_speed_soft_limit_rad_s = WHEEL_SPEED_SOFT_LIMIT_DPS * (core::f32::consts::PI / 180.0);
+    let wheel_speed_excess_rad_s = wheel_speed_rad_s.signum()
+        * (wheel_speed_rad_s.abs() - wheel_speed_soft_limit_rad_s).max(0.0);
     KP_NM_PER_RAD * theta_rad + KD_NM_PER_RAD_S * theta_dot_rad_s
         - KWHEEL_NM_PER_RAD_S * wheel_speed_rad_s
+        - KWHEEL_SOFT_LIMIT_NM_PER_RAD_S * wheel_speed_excess_rad_s
 }
 
 fn clamp(value: f32, min: f32, max: f32) -> f32 {
@@ -1134,7 +1247,14 @@ fn imu_verify(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), ImuProbeEr
 
 fn imu_wake(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
     i2c.write(address, &[MPU_REG_PWR_MGMT_1, 0x01])
-        .map_err(|_| MPU_REG_PWR_MGMT_1)
+        .map_err(|_| MPU_REG_PWR_MGMT_1)?;
+    i2c.write(address, &[MPU_REG_CONFIG, 0x03])
+        .map_err(|_| MPU_REG_CONFIG)?;
+    i2c.write(address, &[MPU_REG_GYRO_CONFIG, 0x10])
+        .map_err(|_| MPU_REG_GYRO_CONFIG)?;
+    i2c.write(address, &[MPU_REG_ACCEL_CONFIG, 0x08])
+        .map_err(|_| MPU_REG_ACCEL_CONFIG)?;
+    Ok(())
 }
 
 fn imu_read_pendulum_measurement(

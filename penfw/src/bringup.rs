@@ -36,7 +36,7 @@ pub fn init_primary_i2c<'d>(
 ) -> I2c<'d, Blocking> {
     I2c::new(
         i2c0,
-        I2cConfig::default().with_frequency(Rate::from_khz(100)),
+        I2cConfig::default().with_frequency(Rate::from_khz(400)),
     )
     .expect("I2C0 init failed")
     .with_sda(sda)
@@ -67,6 +67,15 @@ pub fn write_bytes(serial: &mut Uart<'_, Blocking>, mut bytes: &[u8]) {
         }
     }
     let _ = serial.flush();
+}
+
+pub fn write_bytes_buffered(serial: &mut Uart<'_, Blocking>, mut bytes: &[u8]) {
+    while !bytes.is_empty() {
+        match serial.write(bytes) {
+            Ok(written) if written > 0 => bytes = &bytes[written..],
+            _ => {}
+        }
+    }
 }
 
 pub fn i2c_device_present(i2c: &mut I2c<'_, Blocking>, address: u8) -> bool {
