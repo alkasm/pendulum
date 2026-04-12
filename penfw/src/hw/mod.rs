@@ -16,5 +16,7 @@ pub use gy521::{
 pub use motor_driver_board::MotorDriverBoard;
 pub use tmag5273::{
     Tmag5273, Tmag5273ConvStatus, Tmag5273DeviceStatus, Tmag5273Identity, Tmag5273Measurement,
+    configure_default_on_bus as tmag5273_configure_default_on_bus,
+    read_measurement_on_bus as tmag5273_read_measurement_on_bus,
 };
 pub use tmc6300::{CommutationStep, SIX_STEP_COMMUTATION, Tmc6300};

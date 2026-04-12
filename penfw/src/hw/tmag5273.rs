@@ -90,43 +90,65 @@ impl<'d> Tmag5273<'d> {
     }
 
     pub fn configure_default(&mut self) -> Result<(), u8> {
-        self.update_register(TMAG5273_REG_DEVICE_CONFIG_1, |value| value & !0x03)?;
-        self.update_register(TMAG5273_REG_DEVICE_CONFIG_2, |value| (value & !0x17) | 0x02)?;
-        self.update_register(TMAG5273_REG_SENSOR_CONFIG_1, |value| (value & !0xF0) | 0x70)?;
-        self.update_register(TMAG5273_REG_SENSOR_CONFIG_2, |value| (value & !0x0F) | 0x07)?;
-        self.update_register(TMAG5273_REG_T_CONFIG, |value| value | 0x01)?;
-        Ok(())
+        configure_default_on_bus(&mut self.i2c, self.address)
     }
 
     pub fn read_measurement(&mut self) -> Result<Tmag5273Measurement, u8> {
-        let mut buffer = [0_u8; 13];
-        self.i2c
-            .write_read(self.address, &[TMAG5273_REG_T_MSB_RESULT], &mut buffer)
-            .map_err(|_| TMAG5273_REG_T_MSB_RESULT)?;
-
-        Ok(Tmag5273Measurement {
-            temperature_c: decode_temperature_c(buffer[0], buffer[1]),
-            x_mt: decode_magnetic_mt(buffer[2], buffer[3], TMAG5273_RANGE_MT),
-            y_mt: decode_magnetic_mt(buffer[4], buffer[5], TMAG5273_RANGE_MT),
-            z_mt: decode_magnetic_mt(buffer[6], buffer[7], TMAG5273_RANGE_MT),
-            conv_status: decode_conv_status(buffer[8]),
-            angle_deg: decode_angle_deg(buffer[9], buffer[10]),
-            magnitude: buffer[11],
-            device_status: decode_device_status(buffer[12]),
-        })
+        read_measurement_on_bus(&mut self.i2c, self.address)
     }
 
     fn update_register(&mut self, register: u8, update: impl FnOnce(u8) -> u8) -> Result<(), u8> {
-        let mut value = [0_u8; 1];
-        self.i2c
-            .write_read(self.address, &[register], &mut value)
-            .map_err(|_| register)?;
-        let updated = update(value[0]);
-        self.i2c
-            .write(self.address, &[register, updated])
-            .map_err(|_| register)?;
-        Ok(())
+        update_register_on_bus(&mut self.i2c, self.address, register, update)
     }
+}
+
+pub fn configure_default_on_bus(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
+    update_register_on_bus(i2c, address, TMAG5273_REG_DEVICE_CONFIG_1, |value| value & !0x03)?;
+    update_register_on_bus(i2c, address, TMAG5273_REG_DEVICE_CONFIG_2, |value| {
+        (value & !0x17) | 0x02
+    })?;
+    update_register_on_bus(i2c, address, TMAG5273_REG_SENSOR_CONFIG_1, |value| {
+        (value & !0xF0) | 0x70
+    })?;
+    update_register_on_bus(i2c, address, TMAG5273_REG_SENSOR_CONFIG_2, |value| {
+        (value & !0x0F) | 0x07
+    })?;
+    update_register_on_bus(i2c, address, TMAG5273_REG_T_CONFIG, |value| value | 0x01)?;
+    Ok(())
+}
+
+pub fn read_measurement_on_bus(
+    i2c: &mut I2c<'_, Blocking>,
+    address: u8,
+) -> Result<Tmag5273Measurement, u8> {
+    let mut buffer = [0_u8; 13];
+    i2c.write_read(address, &[TMAG5273_REG_T_MSB_RESULT], &mut buffer)
+        .map_err(|_| TMAG5273_REG_T_MSB_RESULT)?;
+
+    Ok(Tmag5273Measurement {
+        temperature_c: decode_temperature_c(buffer[0], buffer[1]),
+        x_mt: decode_magnetic_mt(buffer[2], buffer[3], TMAG5273_RANGE_MT),
+        y_mt: decode_magnetic_mt(buffer[4], buffer[5], TMAG5273_RANGE_MT),
+        z_mt: decode_magnetic_mt(buffer[6], buffer[7], TMAG5273_RANGE_MT),
+        conv_status: decode_conv_status(buffer[8]),
+        angle_deg: decode_angle_deg(buffer[9], buffer[10]),
+        magnitude: buffer[11],
+        device_status: decode_device_status(buffer[12]),
+    })
+}
+
+fn update_register_on_bus(
+    i2c: &mut I2c<'_, Blocking>,
+    address: u8,
+    register: u8,
+    update: impl FnOnce(u8) -> u8,
+) -> Result<(), u8> {
+    let mut value = [0_u8; 1];
+    i2c.write_read(address, &[register], &mut value)
+        .map_err(|_| register)?;
+    let updated = update(value[0]);
+    i2c.write(address, &[register, updated]).map_err(|_| register)?;
+    Ok(())
 }
 
 fn decode_temperature_c(msb: u8, lsb: u8) -> f32 {
