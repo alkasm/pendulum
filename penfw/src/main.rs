@@ -67,9 +67,6 @@ const MAX_DRIVE_STEP_PER_TICK: f32 = 0.08;
 const MAX_DRIVE_REVERSAL_STEP_PER_TICK: f32 = 0.08;
 const KP_NM_PER_RAD: f32 = 0.22;
 const KD_NM_PER_RAD_S: f32 = 0.007;
-const KWHEEL_NM_PER_RAD_S: f32 = 0.00050;
-const KWHEEL_SOFT_LIMIT_NM_PER_RAD_S: f32 = 0.00150;
-const WHEEL_SPEED_SOFT_LIMIT_DPS: f32 = 550.0;
 
 const PWM_FREQUENCY_HZ: u32 = 32_000;
 const PWM_PERIOD_TICKS: u16 = 2500;
@@ -996,7 +993,6 @@ fn update_control_loop(
     let torque_command_nm = pd_torque_command_nm(
         estimate_measurement.theta_deg,
         estimate_measurement.theta_dot_dps,
-        wheel_speed_dps,
     );
     let theta_error_deg = estimate_measurement.theta_deg - THETA_TARGET_DEG;
     let raw_drive_command = clamp(torque_command_nm / MAX_COMMAND_TORQUE_NM, -1.0, 1.0);
@@ -1407,17 +1403,11 @@ fn max_phase_current_amps(sample: &CurrentSample) -> f32 {
     if uv > ina_w { uv } else { ina_w }
 }
 
-fn pd_torque_command_nm(theta_deg: f32, theta_dot_dps: f32, wheel_speed_dps: f32) -> f32 {
+fn pd_torque_command_nm(theta_deg: f32, theta_dot_dps: f32) -> f32 {
     let theta_error_deg = theta_deg - THETA_TARGET_DEG;
     let theta_rad = theta_error_deg * (core::f32::consts::PI / 180.0);
     let theta_dot_rad_s = theta_dot_dps * (core::f32::consts::PI / 180.0);
-    let wheel_speed_rad_s = wheel_speed_dps * (core::f32::consts::PI / 180.0);
-    let wheel_speed_soft_limit_rad_s = WHEEL_SPEED_SOFT_LIMIT_DPS * (core::f32::consts::PI / 180.0);
-    let wheel_speed_excess_rad_s = wheel_speed_rad_s.signum()
-        * (wheel_speed_rad_s.abs() - wheel_speed_soft_limit_rad_s).max(0.0);
     KP_NM_PER_RAD * theta_rad + KD_NM_PER_RAD_S * theta_dot_rad_s
-        - KWHEEL_NM_PER_RAD_S * wheel_speed_rad_s
-        - KWHEEL_SOFT_LIMIT_NM_PER_RAD_S * wheel_speed_excess_rad_s
 }
 
 fn clamp(value: f32, min: f32, max: f32) -> f32 {

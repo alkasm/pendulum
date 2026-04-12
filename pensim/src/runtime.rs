@@ -51,9 +51,6 @@ impl SimulationRuntime {
         world.insert_resource(ControllerResource::new(
             runtime.controller_kp,
             runtime.controller_kd,
-            runtime.controller_kwheel,
-            runtime.controller_kwheel_soft_limit,
-            runtime.controller_wheel_speed_soft_limit,
         ));
         world.insert_resource(ImuReading { sample: imu_sample });
         world.insert_resource(MotorState::default());
