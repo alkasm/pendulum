@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pendulum_lib::config::{default_body_side_length, default_wheel_radius, RuntimeConfig};
+use pendulum_lib::config::{RuntimeConfig, default_body_side_length, default_wheel_radius};
 use uom::si::{
     acceleration::meter_per_second_squared,
     angle::radian,
@@ -36,7 +36,8 @@ impl SimConfig {
     }
 
     pub fn effective_body_side_length(&self) -> Length {
-        self.body_side_length.max(self.min_body_side_length_for_wheel())
+        self.body_side_length
+            .max(self.min_body_side_length_for_wheel())
     }
 
     pub fn plant_params(&self) -> PlantParams {
@@ -113,11 +114,13 @@ impl PlantParams {
         let body_length_m = body_length.get::<meter>();
         let wheel_mass_kg = wheel_mass.get::<kilogram>();
         let wheel_radius_m = wheel_radius.get::<meter>();
-        let i_body =
-            MomentOfInertia::new::<kilogram_square_meter>((body_mass_kg * body_length_m.powi(2)) / 3.0);
+        let i_body = MomentOfInertia::new::<kilogram_square_meter>(
+            (body_mass_kg * body_length_m.powi(2)) / 3.0,
+        );
         let com_length = body_length / 2.0;
-        let i_wheel =
-            MomentOfInertia::new::<kilogram_square_meter>(0.5 * wheel_mass_kg * wheel_radius_m.powi(2));
+        let i_wheel = MomentOfInertia::new::<kilogram_square_meter>(
+            0.5 * wheel_mass_kg * wheel_radius_m.powi(2),
+        );
         Self::from_inertias(i_body, i_wheel, body_mass, com_length, gravity)
     }
 }

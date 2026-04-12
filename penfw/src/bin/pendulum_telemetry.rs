@@ -12,13 +12,13 @@ use bringup::{
     i2c_device_present, init_console, init_delay, init_primary_i2c, max_clock_config, write_bytes,
 };
 use esp_hal::{Blocking, i2c::master::I2c, main};
+use hw::GY521_DEFAULT_I2C_ADDR;
 use libm::atan2f;
 use pendulum_lib::{
     CurrentTelemetry, HallTelemetry, PendulumControlMode, PendulumControlTelemetry,
     PendulumEstimateMeasurement, PendulumEstimateTelemetry, PendulumTelemetryFrame,
     PendulumTimingTelemetry, TelemetryPacket,
 };
-use hw::GY521_DEFAULT_I2C_ADDR;
 
 const SAMPLE_PERIOD_MS: u32 = 20;
 const FRAME_BUF_LEN: usize = 128;

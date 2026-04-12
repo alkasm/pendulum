@@ -13,12 +13,12 @@ use core::fmt::Write;
 use bringup::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, write_line};
 use esp_hal::{
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
+    main,
     mcpwm::{
         McPwm, PeripheralClockConfig,
         operator::{PwmActions, PwmPin, PwmPinConfig, PwmUpdateMethod, UpdateAction},
         timer::PwmWorkingMode,
     },
-    main,
     peripherals::{GPIO5, GPIO34, MCPWM0},
     time::Rate,
 };
@@ -206,7 +206,11 @@ fn main() -> ! {
                 hall_label,
                 hall_angle_deg,
                 wheel_speed_dps,
-                if motor_drive.diag_is_high() { "high" } else { "low" },
+                if motor_drive.diag_is_high() {
+                    "high"
+                } else {
+                    "low"
+                },
                 current.ina_u.amps,
                 current.ina_v.amps,
                 current.ina_w.amps,

@@ -4,14 +4,9 @@ use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use pendulum_lib::{
-    telemetry::{self, TelemetryFrame, TelemetryReceiver},
-};
+use pendulum_lib::telemetry::{self, TelemetryFrame, TelemetryReceiver};
 use uom::si::{
-    angle::radian,
-    angular_velocity::radian_per_second,
-    electric_current::ampere,
-    time::second,
+    angle::radian, angular_velocity::radian_per_second, electric_current::ampere, time::second,
     torque::newton_meter,
 };
 

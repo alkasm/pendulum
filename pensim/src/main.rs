@@ -7,6 +7,9 @@ fn main() {
     let bind_addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| transport::DEFAULT_TELEMETRY_SOURCE_ADDR.to_string());
+    let command_addr = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| runtime::DEFAULT_COMMAND_ADDR.to_string());
     let sim_config = sim::SimConfig::default();
     let telemetry = TelemetryStream::new();
 
@@ -15,8 +18,10 @@ fn main() {
     );
 
     println!("Sim daemon streaming telemetry on {bind_addr}");
+    println!("Sim command server listening on {command_addr}");
 
-    let runtime_thread = runtime::spawn_simulation_runtime(sim_config, telemetry.publisher());
+    let runtime_thread =
+        runtime::spawn_simulation_runtime(sim_config, telemetry.publisher(), command_addr);
     runtime_thread
         .join()
         .expect("Simulation runtime thread terminated unexpectedly.");

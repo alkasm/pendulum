@@ -41,11 +41,12 @@ impl Motor for SimMotor {
     type Error = core::convert::Infallible;
 
     fn command(&mut self, command: MotorCommand) -> Result<MotorTelemetry, Self::Error> {
-        self.hall_sensor.sample_wheel_speed(command.observed_wheel_speed);
+        self.hall_sensor
+            .sample_wheel_speed(command.observed_wheel_speed);
         let hall = self.hall_sensor.read();
         let speed_ratio = (hall.wheel_speed.get::<radian_per_second>().abs()
             / self.no_load_speed.get::<radian_per_second>())
-            .clamp(0.0, 1.0);
+        .clamp(0.0, 1.0);
         let available_torque = self.max_torque * (1.0 - speed_ratio);
         let applied_torque = if command.torque_command > available_torque {
             available_torque

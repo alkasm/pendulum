@@ -1,8 +1,8 @@
-use crate::pendulum::{
-    BodyAxis3, ImuAxesInBody, ImuMount, MotorMount, Pendulum, PendulumGeometry,
-    PendulumHardware, Point2, Point3, RightTriangularBody,
-};
 use crate::controller::ControllerConfig;
+use crate::pendulum::{
+    BodyAxis3, ImuAxesInBody, ImuMount, MotorMount, Pendulum, PendulumGeometry, PendulumHardware,
+    Point2, Point3, RightTriangularBody,
+};
 use uom::si::{
     angular_velocity::radian_per_second,
     f64::{AngularVelocity, Length, Mass, MomentOfInertia, Time, Torque},
@@ -63,20 +63,11 @@ pub fn default_pendulum() -> Pendulum {
             Length::new::<millimeter>(27.36),
             Length::new::<millimeter>(10.0),
         ),
-        ImuAxesInBody::new(
-        BodyAxis3::Down,
-        BodyAxis3::Right,
-        BodyAxis3::TowardViewer,
-        ),
+        ImuAxesInBody::new(BodyAxis3::Down, BodyAxis3::Right, BodyAxis3::TowardViewer),
     );
 
     Pendulum::new(
-        PendulumGeometry::new(
-            body,
-            center_of_mass_from_pivot,
-            motor_mount,
-            imu_mount,
-        ),
+        PendulumGeometry::new(body, center_of_mass_from_pivot, motor_mount, imu_mount),
         PendulumHardware::new(0x68, 0x22),
     )
 }

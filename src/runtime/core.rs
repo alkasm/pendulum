@@ -6,9 +6,10 @@ use std::{
 use bevy_ecs::prelude::*;
 
 use crate::{
-    controller::{ControllerInput, PendulumController},
+    controller::PendulumController,
     imu::ImuSample,
     motor::{MotorCommand, MotorTelemetry},
+    runtime::step_controller,
     telemetry::{TelemetryFrame, TelemetrySender},
 };
 use uom::si::{
@@ -32,9 +33,7 @@ pub struct ControllerResource {
 
 impl ControllerResource {
     pub fn new(controller: PendulumController) -> Self {
-        Self {
-            controller,
-        }
+        Self { controller }
     }
 }
 
@@ -98,15 +97,14 @@ pub fn control_system(
     wheel_angle: Res<'_, WheelAngleEstimate>,
     mut motor_state: ResMut<'_, MotorState>,
 ) {
-    let output = controller
-        .controller
-        .step(ControllerInput {
-            hall_angle_deg: Some(wheel_angle.angle.get::<degree>() as f32),
-            theta_deg: Some(imu.sample.theta.get::<degree>() as f32),
-            theta_dot_dps: Some(imu.sample.theta_dot.get::<degree_per_second>() as f32),
-            max_phase_current_a: motor_state.telemetry.phase_current.get::<ampere>() as f32,
-            actuator_ready: true,
-        });
+    let output = step_controller(
+        &mut controller.controller,
+        Some(wheel_angle.angle.get::<degree>() as f32),
+        Some(imu.sample.theta.get::<degree>() as f32),
+        Some(imu.sample.theta_dot.get::<degree_per_second>() as f32),
+        motor_state.telemetry.phase_current.get::<ampere>() as f32,
+        true,
+    );
     motor_state.command = MotorCommand {
         torque_command: Torque::new::<newton_meter>(output.torque_command_nm as f64),
         observed_wheel_speed: AngularVelocity::new::<degree_per_second>(

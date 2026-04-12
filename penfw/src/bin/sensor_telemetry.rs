@@ -122,10 +122,7 @@ fn main() -> ! {
     }
 }
 
-fn read_hall_telemetry(
-    i2c: &mut I2c<'_, Blocking>,
-    hall_configured: &mut bool,
-) -> HallTelemetry {
+fn read_hall_telemetry(i2c: &mut I2c<'_, Blocking>, hall_configured: &mut bool) -> HallTelemetry {
     if !i2c_device_present(i2c, HALL_SENSOR_ADDR) {
         *hall_configured = false;
         return HallTelemetry::Missing;
@@ -179,7 +176,9 @@ fn read_imu_telemetry(
 }
 
 fn tmag5273_configure_default(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
-    tmag5273_update_register(i2c, address, TMAG5273_REG_DEVICE_CONFIG_1, |value| value & !0x03)?;
+    tmag5273_update_register(i2c, address, TMAG5273_REG_DEVICE_CONFIG_1, |value| {
+        value & !0x03
+    })?;
     tmag5273_update_register(i2c, address, TMAG5273_REG_DEVICE_CONFIG_2, |value| {
         (value & !0x17) | 0x02
     })?;
@@ -203,7 +202,8 @@ fn tmag5273_update_register(
     i2c.write_read(address, &[register], &mut value)
         .map_err(|_| register)?;
     let updated = update(value[0]);
-    i2c.write(address, &[register, updated]).map_err(|_| register)?;
+    i2c.write(address, &[register, updated])
+        .map_err(|_| register)?;
     Ok(())
 }
 
@@ -249,10 +249,7 @@ fn imu_wake(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
         .map_err(|_| MPU_REG_PWR_MGMT_1)
 }
 
-fn imu_read_measurement(
-    i2c: &mut I2c<'_, Blocking>,
-    address: u8,
-) -> Result<ImuMeasurement, u8> {
+fn imu_read_measurement(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<ImuMeasurement, u8> {
     let mut buffer = [0_u8; 14];
     i2c.write_read(address, &[MPU_REG_ACCEL_XOUT_H], &mut buffer)
         .map_err(|_| MPU_REG_ACCEL_XOUT_H)?;

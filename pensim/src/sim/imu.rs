@@ -1,6 +1,4 @@
-use pendulum_lib::{
-    imu::{Imu, ImuSample},
-};
+use pendulum_lib::imu::{Imu, ImuSample};
 use uom::si::{
     angle::radian,
     angular_velocity::radian_per_second,

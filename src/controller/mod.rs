@@ -162,7 +162,10 @@ impl PendulumController {
 
         let theta_error_deg = theta_deg - self.config.theta_target_deg;
 
-        if !self.state.step_arming(theta_deg, theta_dot_dps, &self.config) {
+        if !self
+            .state
+            .step_arming(theta_deg, theta_dot_dps, &self.config)
+        {
             self.state.stop_output();
             return ControllerOutput {
                 mode: PendulumControlMode::Arming,
@@ -250,7 +253,8 @@ impl ControllerState {
             .last_wheel_angle_deg
             .map(|previous| wrap_angle_delta_deg(angle_deg - previous) / dt_s)
             .unwrap_or(0.0);
-        self.filtered_wheel_speed_dps = 0.8 * self.filtered_wheel_speed_dps + 0.2 * instant_speed_dps;
+        self.filtered_wheel_speed_dps =
+            0.8 * self.filtered_wheel_speed_dps + 0.2 * instant_speed_dps;
         self.last_wheel_angle_deg = Some(angle_deg);
         self.filtered_wheel_speed_dps
     }
@@ -310,7 +314,11 @@ impl ControllerState {
     }
 }
 
-fn pd_torque_command_nm(theta_error_deg: f32, theta_dot_dps: f32, config: &ControllerConfig) -> f32 {
+fn pd_torque_command_nm(
+    theta_error_deg: f32,
+    theta_dot_dps: f32,
+    config: &ControllerConfig,
+) -> f32 {
     let theta_rad = degrees_to_radians(theta_error_deg);
     let theta_dot_rad_s = degrees_to_radians(theta_dot_dps);
     config.kp_nm_per_rad * theta_rad + config.kd_nm_per_rad_s * theta_dot_rad_s

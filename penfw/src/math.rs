@@ -1,13 +1,3 @@
-pub fn clamp(value: f32, min: f32, max: f32) -> f32 {
-    if value < min {
-        min
-    } else if value > max {
-        max
-    } else {
-        value
-    }
-}
-
 pub fn degrees_to_radians(angle_deg: f32) -> f32 {
     angle_deg * (core::f32::consts::PI / 180.0)
 }

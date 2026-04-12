@@ -124,9 +124,27 @@ fn transform_imu_vector_to_body(
     let mut body_y = 0.0;
     let mut body_z = 0.0;
 
-    accumulate_axis_contribution(&mut body_x, &mut body_y, &mut body_z, x, axes_in_body.x_axis);
-    accumulate_axis_contribution(&mut body_x, &mut body_y, &mut body_z, y, axes_in_body.y_axis);
-    accumulate_axis_contribution(&mut body_x, &mut body_y, &mut body_z, z, axes_in_body.z_axis);
+    accumulate_axis_contribution(
+        &mut body_x,
+        &mut body_y,
+        &mut body_z,
+        x,
+        axes_in_body.x_axis,
+    );
+    accumulate_axis_contribution(
+        &mut body_x,
+        &mut body_y,
+        &mut body_z,
+        y,
+        axes_in_body.y_axis,
+    );
+    accumulate_axis_contribution(
+        &mut body_x,
+        &mut body_y,
+        &mut body_z,
+        z,
+        axes_in_body.z_axis,
+    );
 
     (body_x, body_y, body_z)
 }

@@ -76,7 +76,11 @@ impl PacketSender {
     }
 
     pub fn send(&self, packet: TelemetryPacket) {
-        let mut state = self.inner.state.lock().expect("packet state mutex poisoned");
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .expect("packet state mutex poisoned");
         state.latest = Some(packet);
         state.seq += 1;
         self.inner.ready.notify_all();
@@ -98,7 +102,11 @@ impl Clone for PacketSender {
 
 impl Drop for PacketSender {
     fn drop(&mut self) {
-        let mut state = self.inner.state.lock().expect("packet state mutex poisoned");
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .expect("packet state mutex poisoned");
         state.publishers = state.publishers.saturating_sub(1);
         self.inner.ready.notify_all();
     }
@@ -106,7 +114,11 @@ impl Drop for PacketSender {
 
 impl PacketReceiver {
     pub fn drain_latest(&mut self) -> Option<TelemetryPacket> {
-        let state = self.inner.state.lock().expect("packet state mutex poisoned");
+        let state = self
+            .inner
+            .state
+            .lock()
+            .expect("packet state mutex poisoned");
 
         if state.seq == 0 || state.seq == self.last_seen_seq {
             return None;
@@ -117,7 +129,11 @@ impl PacketReceiver {
     }
 
     pub fn recv_latest(&mut self) -> Option<TelemetryPacket> {
-        let mut state = self.inner.state.lock().expect("packet state mutex poisoned");
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .expect("packet state mutex poisoned");
 
         loop {
             if state.seq != 0 && state.seq != self.last_seen_seq {

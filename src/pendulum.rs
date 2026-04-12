@@ -1,7 +1,4 @@
-use uom::si::{
-    f64::Length,
-    length::meter,
-};
+use uom::si::{f64::Length, length::meter};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Point2 {

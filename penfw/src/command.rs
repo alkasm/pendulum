@@ -28,9 +28,10 @@ impl CommandPort {
 
         for byte in &read_buf[..bytes_read] {
             if *byte == 0 {
-                let request =
-                    postcard::from_bytes_cobs::<DeviceRequest>(&mut self.frame_buf[..self.frame_len])
-                        .ok();
+                let request = postcard::from_bytes_cobs::<DeviceRequest>(
+                    &mut self.frame_buf[..self.frame_len],
+                )
+                .ok();
                 self.frame_len = 0;
                 if request.is_some() {
                     return request;

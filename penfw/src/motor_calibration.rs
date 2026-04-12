@@ -1,12 +1,16 @@
 use esp_hal::{Blocking, i2c::master::I2c};
 use libm::atan2f;
 pub use pendulum_lib::StoredMotorCalibration;
-use pendulum_lib::{HallTelemetry, settings_record::RecordLoad};
+use pendulum_lib::{
+    HallTelemetry,
+    runtime::{HallElectricalCalibration, VOLTAGE_LIMIT_V, simplefoc_sine_pwm_phase_voltages},
+    settings_record::RecordLoad,
+};
 
 use crate::{
     hall::{HallSensor, read_hall_telemetry},
     math::{degrees_to_radians, unwrap_near, wrap_degrees},
-    motor_drive::{PwmMotorDrive, VOLTAGE_LIMIT_V, simplefoc_sine_pwm_phase_voltages},
+    motor_drive::PwmMotorDrive,
     settings::{SettingsError, SettingsStorage},
 };
 
@@ -21,31 +25,6 @@ const PHASE_SEARCH_UQ_V: f32 = 0.9;
 const PHASE_SEARCH_LOOPS: u32 = 140;
 const PHASE_SEARCH_SETTLE_LOOPS: u32 = 30;
 const PHASE_SEARCH_OFFSETS_DEG: [f32; 4] = [0.0, 90.0, 180.0, 270.0];
-
-#[derive(Clone, Copy)]
-pub struct HallElectricalCalibration {
-    pub direction_sign: f32,
-    pub electrical_offset_deg: f32,
-    pub torque_sign: f32,
-}
-
-impl HallElectricalCalibration {
-    pub fn electrical_angle_deg(&self, hall_angle_deg: f32) -> f32 {
-        wrap_degrees(
-            self.direction_sign * MOTOR_POLE_PAIRS * hall_angle_deg + self.electrical_offset_deg,
-        )
-    }
-}
-
-impl From<StoredMotorCalibration> for HallElectricalCalibration {
-    fn from(value: StoredMotorCalibration) -> Self {
-        Self {
-            direction_sign: value.direction_sign,
-            electrical_offset_deg: value.electrical_offset_deg,
-            torque_sign: value.torque_sign,
-        }
-    }
-}
 
 #[allow(dead_code)]
 pub fn load_motor_calibration() -> Result<Option<StoredMotorCalibration>, SettingsError> {
@@ -122,13 +101,11 @@ pub fn calibrate_hall_electrical_cycle(
                 let neg_offset_deg =
                     wrap_degrees(electrical_angle_deg + MOTOR_POLE_PAIRS * measurement.angle_deg);
                 pos_offset_sin_sum += libm::sinf(degrees_to_radians(pos_offset_deg));
-                pos_offset_cos_sum += libm::sinf(
-                    degrees_to_radians(pos_offset_deg) + core::f32::consts::FRAC_PI_2,
-                );
+                pos_offset_cos_sum +=
+                    libm::sinf(degrees_to_radians(pos_offset_deg) + core::f32::consts::FRAC_PI_2);
                 neg_offset_sin_sum += libm::sinf(degrees_to_radians(neg_offset_deg));
-                neg_offset_cos_sum += libm::sinf(
-                    degrees_to_radians(neg_offset_deg) + core::f32::consts::FRAC_PI_2,
-                );
+                neg_offset_cos_sum +=
+                    libm::sinf(degrees_to_radians(neg_offset_deg) + core::f32::consts::FRAC_PI_2);
                 sample_count += 1;
             }
         }
@@ -152,9 +129,13 @@ pub fn calibrate_hall_electrical_cycle(
         -1.0
     };
     let electrical_offset_deg = if direction_sign > 0.0 {
-        wrap_degrees(atan2f(pos_offset_sin_sum, pos_offset_cos_sum) * (180.0 / core::f32::consts::PI))
+        wrap_degrees(
+            atan2f(pos_offset_sin_sum, pos_offset_cos_sum) * (180.0 / core::f32::consts::PI),
+        )
     } else {
-        wrap_degrees(atan2f(neg_offset_sin_sum, neg_offset_cos_sum) * (180.0 / core::f32::consts::PI))
+        wrap_degrees(
+            atan2f(neg_offset_sin_sum, neg_offset_cos_sum) * (180.0 / core::f32::consts::PI),
+        )
     };
 
     Some(HallElectricalCalibration {

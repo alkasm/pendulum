@@ -71,8 +71,10 @@ impl PendulumImuEstimator {
         geometry: &PendulumGeometry,
         sample: RawImuSample,
     ) -> PendulumEstimateMeasurement {
-        let accel_body = transform_acceleration_to_body(sample.accel, geometry.imu_mount.axes_in_body);
-        let gyro_body = transform_angular_velocity_to_body(sample.gyro, geometry.imu_mount.axes_in_body);
+        let accel_body =
+            transform_acceleration_to_body(sample.accel, geometry.imu_mount.axes_in_body);
+        let gyro_body =
+            transform_angular_velocity_to_body(sample.gyro, geometry.imu_mount.axes_in_body);
 
         let theta_dot = -gyro_body.z;
         let accel_theta = Angle::new::<degree>(
@@ -89,11 +91,7 @@ impl PendulumImuEstimator {
         }
     }
 
-    fn observe_theta(
-        &mut self,
-        theta_dot: AngularVelocity,
-        accel_theta: Angle,
-    ) -> Angle {
+    fn observe_theta(&mut self, theta_dot: AngularVelocity, accel_theta: Angle) -> Angle {
         let predicted_theta = self
             .filtered_theta
             .map(|theta| {
@@ -112,7 +110,10 @@ impl PendulumImuEstimator {
     }
 }
 
-fn transform_acceleration_to_body(vector: Acceleration3, axes_in_body: ImuAxesInBody) -> Acceleration3 {
+fn transform_acceleration_to_body(
+    vector: Acceleration3,
+    axes_in_body: ImuAxesInBody,
+) -> Acceleration3 {
     let mut body = Acceleration3::default();
     accumulate_axis_contribution(&mut body, vector.x, axes_in_body.x_axis);
     accumulate_axis_contribution(&mut body, vector.y, axes_in_body.y_axis);

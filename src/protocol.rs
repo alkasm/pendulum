@@ -391,8 +391,7 @@ mod tests {
         );
         let mut buffer = [0_u8; 256];
         let encoded = postcard::to_slice_cobs(&request, &mut buffer).unwrap();
-        let decoded =
-            postcard::from_bytes_cobs::<DeviceRequest>(encoded).unwrap();
+        let decoded = postcard::from_bytes_cobs::<DeviceRequest>(encoded).unwrap();
         assert_eq!(decoded, request);
     }
 
@@ -411,8 +410,7 @@ mod tests {
 
         let mut buffer = [0_u8; 256];
         let encoded = postcard::to_slice_cobs(&response, &mut buffer).unwrap();
-        let decoded =
-            postcard::from_bytes_cobs::<DeviceResponse>(encoded).unwrap();
+        let decoded = postcard::from_bytes_cobs::<DeviceResponse>(encoded).unwrap();
         assert_eq!(decoded, response);
     }
 }

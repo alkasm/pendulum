@@ -22,12 +22,12 @@ use bringup::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, writ
 use esp_hal::{
     Blocking,
     gpio::{Input, InputConfig, Level, Output, OutputConfig},
+    main,
     mcpwm::{
         McPwm, PeripheralClockConfig,
         operator::{PwmActions, PwmPin, PwmPinConfig, PwmUpdateMethod, UpdateAction},
         timer::PwmWorkingMode,
     },
-    main,
     peripherals::{GPIO5, GPIO34, MCPWM0},
     time::Rate,
     uart::Uart,
@@ -239,8 +239,7 @@ fn main() -> ! {
     let _ = writeln!(
         serial,
         "cal done dir={:+.0} offset={:.2}deg\r",
-        calibration.direction_sign,
-        calibration.electrical_offset_deg,
+        calibration.direction_sign, calibration.electrical_offset_deg,
     );
     let _ = serial.flush();
 
@@ -313,7 +312,11 @@ fn main() -> ! {
                     ua_v,
                     ub_v,
                     uc_v,
-                    if motor_drive.diag_is_high() { "high" } else { "low" },
+                    if motor_drive.diag_is_high() {
+                        "high"
+                    } else {
+                        "low"
+                    },
                     current.ina_u.amps,
                     current.ina_v.amps,
                     current.ina_w.amps,
@@ -328,7 +331,11 @@ fn main() -> ! {
                     "label={} loop={:>3} hall=missing diag={} iabc=[{:+5.2},{:+5.2},{:+5.2}]A\r",
                     stage.label,
                     stage_loop,
-                    if motor_drive.diag_is_high() { "high" } else { "low" },
+                    if motor_drive.diag_is_high() {
+                        "high"
+                    } else {
+                        "low"
+                    },
                     current.ina_u.amps,
                     current.ina_v.amps,
                     current.ina_w.amps,
@@ -553,9 +560,7 @@ fn calibrate_hall_electrical_cycle(
             let _ = writeln!(
                 serial,
                 "cal sweep loop={} shaft={:.2}deg elec={:.2}deg\r",
-                loop_index,
-                open_loop_shaft_deg,
-                electrical_angle_deg,
+                loop_index, open_loop_shaft_deg, electrical_angle_deg,
             );
             let _ = serial.flush();
         }
@@ -573,9 +578,7 @@ fn calibrate_hall_electrical_cycle(
         let _ = writeln!(
             serial,
             "cal invalid travel hall={:.2}deg elec={:.2}deg samples={}\r",
-            hall_travel_deg,
-            electrical_travel_deg,
-            sample_count,
+            hall_travel_deg, electrical_travel_deg, sample_count,
         );
         let _ = serial.flush();
         return None;
@@ -595,9 +598,7 @@ fn calibrate_hall_electrical_cycle(
     let _ = writeln!(
         serial,
         "cal travel hall={:.2}deg elec={:.2}deg samples={}\r",
-        hall_travel_deg,
-        electrical_travel_deg,
-        sample_count,
+        hall_travel_deg, electrical_travel_deg, sample_count,
     );
     let _ = serial.flush();
 
@@ -663,9 +664,7 @@ fn refine_torque_phase_offset(
         let _ = writeln!(
             serial,
             "phase candidate offset={:.0}deg travel={:+.2}deg score={:+.2}\r",
-            candidate_offset_deg,
-            travel_deg,
-            score,
+            candidate_offset_deg, travel_deg, score,
         );
         let _ = serial.flush();
 
@@ -689,9 +688,7 @@ fn refine_torque_phase_offset(
     let _ = writeln!(
         serial,
         "phase search chose offset_delta={:.0}deg final_offset={:.2}deg score={:+.2}\r",
-        best_offset_delta_deg,
-        chosen.electrical_offset_deg,
-        best_score,
+        best_offset_delta_deg, chosen.electrical_offset_deg, best_score,
     );
     let _ = serial.flush();
     Some(chosen)

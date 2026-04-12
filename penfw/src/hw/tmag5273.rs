@@ -103,7 +103,9 @@ impl<'d> Tmag5273<'d> {
 }
 
 pub fn configure_default_on_bus(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
-    update_register_on_bus(i2c, address, TMAG5273_REG_DEVICE_CONFIG_1, |value| value & !0x03)?;
+    update_register_on_bus(i2c, address, TMAG5273_REG_DEVICE_CONFIG_1, |value| {
+        value & !0x03
+    })?;
     update_register_on_bus(i2c, address, TMAG5273_REG_DEVICE_CONFIG_2, |value| {
         (value & !0x17) | 0x02
     })?;
@@ -147,7 +149,8 @@ fn update_register_on_bus(
     i2c.write_read(address, &[register], &mut value)
         .map_err(|_| register)?;
     let updated = update(value[0]);
-    i2c.write(address, &[register, updated]).map_err(|_| register)?;
+    i2c.write(address, &[register, updated])
+        .map_err(|_| register)?;
     Ok(())
 }
 

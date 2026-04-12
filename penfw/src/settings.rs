@@ -2,7 +2,9 @@ use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
 use pendulum_lib::{
     DeviceMode, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
-    settings_record::{RecordEncodeError, RecordLoad, SETTINGS_SLOT_SIZE, decode_record, encode_record},
+    settings_record::{
+        RecordEncodeError, RecordLoad, SETTINGS_SLOT_SIZE, decode_record, encode_record,
+    },
 };
 
 const SETTINGS_BASE_OFFSET: u32 = 0x9000;

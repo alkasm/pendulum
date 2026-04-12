@@ -77,6 +77,20 @@ pub fn connect_tcp_telemetry(addr: &str) -> io::Result<TelemetryReceiver> {
     Ok(spawn_runtime_filter(packets))
 }
 
+pub fn request_tcp_device(
+    addr: &str,
+    request: &crate::DeviceRequest,
+    timeout: Duration,
+) -> io::Result<crate::DeviceResponse> {
+    let mut stream = TcpStream::connect(addr)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let mut reader = BufReader::new(stream.try_clone()?);
+    write_cobs_message(&mut stream, request)?;
+    stream.flush()?;
+    read_cobs_message(&mut reader)
+}
+
 pub fn connect_serial_packets(port_name: &str, baud_rate: u32) -> io::Result<PacketReceiver> {
     let port = serialport::new(port_name, baud_rate)
         .timeout(SERIAL_PORT_CONNECT_TIMEOUT)
@@ -141,10 +155,7 @@ pub fn connect_serial_telemetry_blocking(port_name: &str, baud_rate: u32) -> Tel
     }
 }
 
-fn spawn_packet_reader<R>(
-    reader: BufReader<R>,
-    source_name: String,
-) -> io::Result<PacketReceiver>
+fn spawn_packet_reader<R>(reader: BufReader<R>, source_name: String) -> io::Result<PacketReceiver>
 where
     R: io::Read + Send + 'static,
 {
@@ -319,14 +330,14 @@ fn serial_error_to_io_error(error: serialport::Error) -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{io::Cursor, net::TcpListener, thread, time::Duration};
 
     use crate::{
         CalibrationStatus, DeviceMode, DeviceRequest, DeviceResponse, DeviceState, DeviceStatus,
         WifiStatus,
     };
 
-    use super::{read_cobs_message, write_cobs_message};
+    use super::{read_cobs_message, request_tcp_device, write_cobs_message};
 
     #[test]
     fn command_frame_roundtrips() {
@@ -356,5 +367,40 @@ mod tests {
         let mut reader = Cursor::new(encoded);
         let decoded = read_cobs_message::<_, DeviceResponse>(&mut reader).unwrap();
         assert_eq!(decoded, response);
+    }
+
+    #[test]
+    fn tcp_device_request_roundtrips() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+            let request = read_cobs_message::<_, DeviceRequest>(&mut reader).unwrap();
+            assert_eq!(request, DeviceRequest::GetStatus);
+            write_cobs_message(
+                &mut stream,
+                &DeviceResponse::Status(DeviceStatus {
+                    mode: DeviceMode::Manufacturing,
+                    state: DeviceState::Service,
+                    fault: None,
+                    wifi: WifiStatus { ssid: None },
+                    calibration: CalibrationStatus::Missing,
+                    control_mode: None,
+                }),
+            )
+            .unwrap();
+        });
+
+        let response = request_tcp_device(
+            &addr.to_string(),
+            &DeviceRequest::GetStatus,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        server.join().unwrap();
+
+        assert!(matches!(response, DeviceResponse::Status(_)));
     }
 }

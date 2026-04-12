@@ -25,22 +25,19 @@ use bringup::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, writ
 use esp_hal::{
     Blocking,
     gpio::{Level, Output, OutputConfig},
+    main,
     mcpwm::{
         McPwm, PeripheralClockConfig,
         operator::{PwmActions, PwmPin, PwmPinConfig, PwmUpdateMethod, UpdateAction},
         timer::PwmWorkingMode,
     },
-    main,
     peripherals::{GPIO5, GPIO34, MCPWM0},
     time::Rate,
     uart::Uart,
 };
 use hw::Tmag5273;
 use libm::{atan2f, sinf};
-use motor_calibration::{
-    StoredMotorCalibration,
-    save_motor_calibration,
-};
+use motor_calibration::{StoredMotorCalibration, save_motor_calibration};
 
 const CONTROL_PERIOD_MS: u32 = 5;
 
@@ -159,22 +156,18 @@ fn main() -> ! {
         }
     }
 
-    let calibration = match calibrate_hall_electrical_cycle(
-        &mut serial,
-        &delay,
-        &mut motor_drive,
-        &mut hall,
-    ) {
-        Some(calibration) => calibration,
-        None => {
-            motor_drive.disable();
-            motor_drive.coast();
-            write_line(&mut serial, "motor calibration failed; idling");
-            loop {
-                delay.delay_millis(1_000);
+    let calibration =
+        match calibrate_hall_electrical_cycle(&mut serial, &delay, &mut motor_drive, &mut hall) {
+            Some(calibration) => calibration,
+            None => {
+                motor_drive.disable();
+                motor_drive.coast();
+                write_line(&mut serial, "motor calibration failed; idling");
+                loop {
+                    delay.delay_millis(1_000);
+                }
             }
-        }
-    };
+        };
     let calibration = refine_torque_phase_offset(
         &mut serial,
         &delay,
@@ -194,12 +187,8 @@ fn main() -> ! {
         Ok(()) => {
             let _ = writeln!(
                 serial,
-                concat!(
-                    "saved dir={:+.0} offset={:.2}deg torque={:+.0}\r"
-                ),
-                stored.direction_sign,
-                stored.electrical_offset_deg,
-                stored.torque_sign,
+                concat!("saved dir={:+.0} offset={:.2}deg torque={:+.0}\r"),
+                stored.direction_sign, stored.electrical_offset_deg, stored.torque_sign,
             );
             let _ = serial.flush();
         }
@@ -344,9 +333,7 @@ fn calibrate_hall_electrical_cycle(
             let _ = writeln!(
                 serial,
                 "cal sweep loop={} shaft={:.2}deg elec={:.2}deg\r",
-                loop_index,
-                open_loop_shaft_deg,
-                electrical_angle_deg,
+                loop_index, open_loop_shaft_deg, electrical_angle_deg,
             );
             let _ = serial.flush();
         }
@@ -364,9 +351,7 @@ fn calibrate_hall_electrical_cycle(
         let _ = writeln!(
             serial,
             "cal invalid travel hall={:.2}deg elec={:.2}deg samples={}\r",
-            hall_travel_deg,
-            electrical_travel_deg,
-            sample_count,
+            hall_travel_deg, electrical_travel_deg, sample_count,
         );
         let _ = serial.flush();
         return None;
@@ -386,9 +371,7 @@ fn calibrate_hall_electrical_cycle(
     let _ = writeln!(
         serial,
         "cal travel hall={:.2}deg elec={:.2}deg samples={}\r",
-        hall_travel_deg,
-        electrical_travel_deg,
-        sample_count,
+        hall_travel_deg, electrical_travel_deg, sample_count,
     );
     let _ = serial.flush();
 
@@ -450,11 +433,7 @@ fn refine_torque_phase_offset(
                     "phase candidate offset={:.0}deg torque={:+.0} ",
                     "pos={:+.2}deg neg={:+.2}deg score={:+.2}\r"
                 ),
-                candidate_offset_deg,
-                candidate_torque_sign,
-                pos_travel_deg,
-                neg_travel_deg,
-                score,
+                candidate_offset_deg, candidate_torque_sign, pos_travel_deg, neg_travel_deg, score,
             );
             let _ = serial.flush();
 
@@ -484,10 +463,7 @@ fn refine_torque_phase_offset(
             "phase search chose offset_delta={:.0}deg final_offset={:.2}deg ",
             "torque={:+.0} score={:+.2}\r"
         ),
-        best_offset_delta_deg,
-        chosen.electrical_offset_deg,
-        chosen.torque_sign,
-        best_score,
+        best_offset_delta_deg, chosen.electrical_offset_deg, chosen.torque_sign, best_score,
     );
     let _ = serial.flush();
     Some(chosen)

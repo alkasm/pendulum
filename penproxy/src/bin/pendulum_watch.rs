@@ -26,7 +26,11 @@ fn format_pendulum_brief(packet: &TelemetryPacket) -> Option<String> {
             format!("{:+7.2}", measurement.theta_dot_dps),
             "ok".to_string(),
         ),
-        other => ("   n/a".to_string(), "    n/a".to_string(), format!("{other:?}")),
+        other => (
+            "   n/a".to_string(),
+            "    n/a".to_string(),
+            format!("{other:?}"),
+        ),
     };
 
     let hall_status = match frame.hall {

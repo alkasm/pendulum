@@ -20,6 +20,9 @@ struct Cli {
     #[arg(long, default_value_t = DEFAULT_SENSOR_TELEMETRY_BAUD)]
     baud: u32,
 
+    #[arg(long)]
+    tcp_addr: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -152,13 +155,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn send_request(cli: &Cli, request: DeviceRequest) -> Result<DeviceResponse, Box<dyn std::error::Error>> {
+fn send_request(
+    cli: &Cli,
+    request: DeviceRequest,
+) -> Result<DeviceResponse, Box<dyn std::error::Error>> {
     let timeout = command_timeout(&cli.command);
-    let port = serialport::new(&cli.port, cli.baud).timeout(timeout).open()?;
-    let mut port = BufReader::new(port);
-    transport::write_cobs_message(port.get_mut(), &request)?;
-    port.get_mut().flush()?;
-    Ok(transport::read_cobs_message(&mut port)?)
+    if let Some(addr) = &cli.tcp_addr {
+        Ok(transport::request_tcp_device(addr, &request, timeout)?)
+    } else {
+        let port = serialport::new(&cli.port, cli.baud)
+            .timeout(timeout)
+            .open()?;
+        let mut port = BufReader::new(port);
+        transport::write_cobs_message(port.get_mut(), &request)?;
+        port.get_mut().flush()?;
+        Ok(transport::read_cobs_message(&mut port)?)
+    }
 }
 
 fn command_timeout(command: &Command) -> Duration {
@@ -277,7 +289,9 @@ mod tests {
     fn parses_mode_set_command() {
         let cli = Cli::try_parse_from(["pendev", "mode", "set", "production"]).unwrap();
         match cli.command {
-            Command::Mode { command: ModeCommand::Set { mode } } => {
+            Command::Mode {
+                command: ModeCommand::Set { mode },
+            } => {
                 assert!(matches!(mode, ModeArg::Production));
             }
             other => panic!("unexpected command: {other:?}"),
@@ -288,7 +302,9 @@ mod tests {
     fn parses_mode_set_aliases() {
         let cli = Cli::try_parse_from(["pendev", "mode", "set", "mfg"]).unwrap();
         match cli.command {
-            Command::Mode { command: ModeCommand::Set { mode } } => {
+            Command::Mode {
+                command: ModeCommand::Set { mode },
+            } => {
                 assert!(matches!(mode, ModeArg::Manufacturing));
             }
             other => panic!("unexpected command: {other:?}"),
@@ -296,7 +312,9 @@ mod tests {
 
         let cli = Cli::try_parse_from(["pendev", "mode", "set", "prod"]).unwrap();
         match cli.command {
-            Command::Mode { command: ModeCommand::Set { mode } } => {
+            Command::Mode {
+                command: ModeCommand::Set { mode },
+            } => {
                 assert!(matches!(mode, ModeArg::Production));
             }
             other => panic!("unexpected command: {other:?}"),
@@ -306,8 +324,7 @@ mod tests {
     #[test]
     fn parses_wifi_set_arguments() {
         let cli =
-            Cli::try_parse_from(["pendev", "wifi", "set", "pendulum-net", "super-secret"])
-                .unwrap();
+            Cli::try_parse_from(["pendev", "wifi", "set", "pendulum-net", "super-secret"]).unwrap();
 
         match cli.command {
             Command::Wifi {

@@ -1,11 +1,6 @@
 use alloc::{boxed::Box, string::String};
 
-use esp_hal::{
-    delay::Delay,
-    peripherals::WIFI,
-    rng::Rng,
-    timer::timg::Timer,
-};
+use esp_hal::{delay::Delay, peripherals::WIFI, rng::Rng, timer::timg::Timer};
 use esp_wifi::{
     init,
     wifi::{self, ClientConfiguration, Configuration, WifiController, WifiDevice},
@@ -41,11 +36,7 @@ impl<'d> WifiValidator<'d> {
         })
     }
 
-    pub fn validate(
-        &mut self,
-        credentials: &WifiCredentials,
-        delay: &Delay,
-    ) -> WifiProbeResult {
+    pub fn validate(&mut self, credentials: &WifiCredentials, delay: &Delay) -> WifiProbeResult {
         if self.controller.stop().is_err() {
             // Ignore stop failures here; the controller may simply not be started yet.
         }
