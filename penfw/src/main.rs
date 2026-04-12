@@ -47,7 +47,7 @@ use pendulum_lib::{
     config::default_pendulum,
     controller::{ControllerInput, PendulumController},
     device::{boot_status, production_fault},
-    estimation::{PendulumImuEstimator, RawImuSample, Vector3f},
+    estimation::{Acceleration3, AngularVelocity3, PendulumImuEstimator, RawImuSample},
     pendulum::PendulumGeometry,
     settings_record::RecordLoad,
     CalibrationStatus, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
@@ -58,6 +58,11 @@ use pendulum_lib::{
     WifiValidationReport,
 };
 use settings::SettingsStorage;
+use uom::si::{
+    acceleration::meter_per_second_squared,
+    angular_velocity::degree_per_second,
+    f32::{Acceleration, AngularVelocity},
+};
 use wifi::WifiValidator;
 
 const CONTROL_PERIOD_MS: u32 = 5;
@@ -1136,15 +1141,15 @@ fn read_pendulum_estimate(
         Ok(measurement) => PendulumEstimateTelemetry::Measurement(imu_estimator.step(
             geometry,
             RawImuSample {
-                accel_g: Vector3f {
-                    x: measurement.ax_g,
-                    y: measurement.ay_g,
-                    z: measurement.az_g,
+                accel: Acceleration3 {
+                    x: accel_from_g(measurement.ax_g),
+                    y: accel_from_g(measurement.ay_g),
+                    z: accel_from_g(measurement.az_g),
                 },
-                gyro_dps: Vector3f {
-                    x: measurement.gx_dps,
-                    y: measurement.gy_dps,
-                    z: measurement.gz_dps,
+                gyro: AngularVelocity3 {
+                    x: AngularVelocity::new::<degree_per_second>(measurement.gx_dps),
+                    y: AngularVelocity::new::<degree_per_second>(measurement.gy_dps),
+                    z: AngularVelocity::new::<degree_per_second>(measurement.gz_dps),
                 },
             },
         )),
@@ -1153,6 +1158,10 @@ fn read_pendulum_estimate(
             PendulumEstimateTelemetry::ReadError { register }
         }
     }
+}
+
+fn accel_from_g(value_g: f32) -> Acceleration {
+    Acceleration::new::<meter_per_second_squared>(value_g * 9.80665)
 }
 
 fn tmag5273_configure_default(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {

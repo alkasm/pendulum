@@ -25,6 +25,7 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 serialport = { version = "4.8", optional = true }
 uom = { version = "0.38.0", default-features = false, features = [
     "autoconvert",
+    "f32",
     "f64",
     "si",
     "serde",
