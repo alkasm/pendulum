@@ -4388,6 +4388,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "heapless 0.8.0",
+ "libm",
  "postcard",
  "serde",
  "serialport",

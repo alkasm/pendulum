@@ -9,7 +9,6 @@ mod bringup;
 mod command;
 #[path = "hw/mod.rs"]
 mod hw;
-mod imu_estimator;
 mod math;
 mod motor_calibration;
 mod settings;
@@ -36,8 +35,10 @@ use esp_hal::{
     time::{Duration, Instant, Rate},
     uart::Uart,
 };
-use hw::{CurrentSample, CurrentSensor};
-use imu_estimator::ImuEstimator;
+use hw::{
+    CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR, read_raw_measurement, verify_address,
+    wake_device,
+};
 use libm::{atan2f, sinf};
 use math::{
     clamp, degrees_to_radians, unwrap_near, wrap_degrees,
@@ -46,6 +47,7 @@ use pendulum_lib::{
     config::default_pendulum,
     controller::{ControllerInput, PendulumController},
     device::{boot_status, production_fault},
+    estimation::{PendulumImuEstimator, RawImuSample, Vector3f},
     pendulum::PendulumGeometry,
     settings_record::RecordLoad,
     CalibrationStatus, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
@@ -138,7 +140,7 @@ struct App<'d> {
     hall_configured: bool,
     imu_verified: bool,
     imu_awake: bool,
-    imu_estimator: ImuEstimator,
+    imu_estimator: PendulumImuEstimator,
     controller: PendulumController,
     motor_drive_state: MotorDriveState,
     geometry: PendulumGeometry,
@@ -246,7 +248,7 @@ fn main() -> ! {
         hall_configured: false,
         imu_verified: false,
         imu_awake: false,
-        imu_estimator: ImuEstimator::new(dt_s()),
+        imu_estimator: PendulumImuEstimator::new(dt_s()),
         controller: PendulumController::new(Default::default()),
         motor_drive_state: MotorDriveState::new(),
         geometry: default_pendulum().geometry,
@@ -310,10 +312,11 @@ impl<'d> App<'d> {
             let loop_start = Instant::now();
             let current_sample = self.current_sensor.read();
             let hall = read_hall_telemetry(&mut self.i2c, &mut self.hall_configured);
-            let estimate = self.imu_estimator.read_pendulum_estimate(
+            let estimate = read_pendulum_estimate(
                 &mut self.i2c,
                 &mut self.imu_verified,
                 &mut self.imu_awake,
+                &mut self.imu_estimator,
                 &self.geometry,
             );
             let control = update_control_loop(
@@ -1088,6 +1091,67 @@ fn read_hall_telemetry(
     match tmag5273_read_measurement(i2c, HALL_SENSOR_ADDR) {
         Ok(measurement) => HallTelemetry::Measurement(measurement),
         Err(register) => HallTelemetry::ReadError { register },
+    }
+}
+
+fn read_pendulum_estimate(
+    i2c: &mut I2c<'_, Blocking>,
+    imu_verified: &mut bool,
+    imu_awake: &mut bool,
+    imu_estimator: &mut PendulumImuEstimator,
+    geometry: &PendulumGeometry,
+) -> PendulumEstimateTelemetry {
+    if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
+        *imu_verified = false;
+        *imu_awake = false;
+        imu_estimator.reset();
+        return PendulumEstimateTelemetry::Missing;
+    }
+
+    if !*imu_verified {
+        match verify_address(i2c, GY521_DEFAULT_I2C_ADDR) {
+            Ok(()) => *imu_verified = true,
+            Err(hw::Gy521Error::RegisterRead(_)) => {
+                imu_estimator.reset();
+                return PendulumEstimateTelemetry::Missing;
+            }
+            Err(hw::Gy521Error::UnexpectedWhoAmI(value)) => {
+                imu_estimator.reset();
+                return PendulumEstimateTelemetry::UnexpectedWhoAmI { value };
+            }
+        }
+    }
+
+    if !*imu_awake {
+        match wake_device(i2c, GY521_DEFAULT_I2C_ADDR) {
+            Ok(()) => *imu_awake = true,
+            Err(register) => {
+                imu_estimator.reset();
+                return PendulumEstimateTelemetry::WakeError { register };
+            }
+        }
+    }
+
+    match read_raw_measurement(i2c, GY521_DEFAULT_I2C_ADDR) {
+        Ok(measurement) => PendulumEstimateTelemetry::Measurement(imu_estimator.step(
+            geometry,
+            RawImuSample {
+                accel_g: Vector3f {
+                    x: measurement.ax_g,
+                    y: measurement.ay_g,
+                    z: measurement.az_g,
+                },
+                gyro_dps: Vector3f {
+                    x: measurement.gx_dps,
+                    y: measurement.gy_dps,
+                    z: measurement.gz_dps,
+                },
+            },
+        )),
+        Err(register) => {
+            imu_estimator.reset();
+            PendulumEstimateTelemetry::ReadError { register }
+        }
     }
 }
 

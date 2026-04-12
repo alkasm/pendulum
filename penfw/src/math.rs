@@ -23,17 +23,6 @@ pub fn wrap_degrees(angle_deg: f32) -> f32 {
     wrapped
 }
 
-pub fn wrap_signed_degrees(angle_deg: f32) -> f32 {
-    let mut wrapped = angle_deg;
-    while wrapped > 180.0 {
-        wrapped -= 360.0;
-    }
-    while wrapped <= -180.0 {
-        wrapped += 360.0;
-    }
-    wrapped
-}
-
 pub fn unwrap_near(reference_unwrapped_deg: f32, raw_wrapped_deg: f32) -> f32 {
     reference_unwrapped_deg
         + wrap_angle_delta_deg(raw_wrapped_deg - wrap_degrees(reference_unwrapped_deg))
