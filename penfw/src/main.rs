@@ -9,6 +9,8 @@ mod bringup;
 mod command;
 #[path = "hw/mod.rs"]
 mod hw;
+mod imu_estimator;
+mod math;
 mod motor_calibration;
 mod settings;
 mod wifi;
@@ -34,23 +36,26 @@ use esp_hal::{
     time::{Duration, Instant, Rate},
     uart::Uart,
 };
-use hw::{CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR};
-use libm::{atan2f, sinf, sqrtf};
+use hw::{CurrentSample, CurrentSensor};
+use imu_estimator::ImuEstimator;
+use libm::{atan2f, sinf};
+use math::{
+    clamp, degrees_to_radians, unwrap_near, wrap_degrees,
+};
 use pendulum_lib::{
     config::default_pendulum,
     controller::{ControllerInput, PendulumController},
     device::{boot_status, production_fault},
-    pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
+    pendulum::PendulumGeometry,
     settings_record::RecordLoad,
     CalibrationStatus, DEVICE_PROTOCOL_VERSION, DeviceCommandError,
     DeviceFault, DeviceInfo, DeviceMode, DeviceRequest, DeviceResponse, DeviceState,
     DeviceStatus, FirmwareName, FirmwareVersion, HallMeasurement, HallTelemetry,
-    PendulumControlMode, PendulumControlTelemetry, PendulumEstimateMeasurement,
-    PendulumEstimateTelemetry, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
+    PendulumControlMode, PendulumControlTelemetry, PendulumEstimateTelemetry,
+    StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
     WifiValidationReport,
 };
 use settings::SettingsStorage;
-use uom::si::length::millimeter;
 use wifi::WifiValidator;
 
 const CONTROL_PERIOD_MS: u32 = 5;
@@ -83,46 +88,7 @@ const TMAG5273_TEMP_SENSE_T0_C: f32 = 25.0;
 const TMAG5273_TEMP_ADC_T0: i16 = 17_508;
 const TMAG5273_TEMP_ADC_RES: f32 = 60.1;
 
-const MPU_REG_ACCEL_XOUT_H: u8 = 0x3B;
-const MPU_REG_CONFIG: u8 = 0x1A;
-const MPU_REG_GYRO_CONFIG: u8 = 0x1B;
-const MPU_REG_ACCEL_CONFIG: u8 = 0x1C;
-const MPU_REG_PWR_MGMT_1: u8 = 0x6B;
-const MPU_REG_WHO_AM_I: u8 = 0x75;
-const MPU6050_WHO_AM_I_VALUE: u8 = 0x68;
-const ACCEL_LSB_PER_G: f32 = 8_192.0;
-const GYRO_LSB_PER_DPS: f32 = 32.8;
-const ACCEL_CORRECTION_GAIN: f32 = 0.08;
-const MAX_ACCEL_CORRECTION_STEP_DEG: f32 = 2.0;
-const MAX_ACCEL_CORRECTION_ERROR_DEG: f32 = 35.0;
-const MIN_ACCEL_GRAVITY_G: f32 = 0.75;
-const MAX_ACCEL_GRAVITY_G: f32 = 1.25;
 const SERVICE_POLL_DELAY_MS: u32 = 10;
-
-#[derive(Clone, Copy)]
-enum ImuProbeError {
-    RegisterRead,
-    UnexpectedWhoAmI(u8),
-}
-
-#[derive(Clone, Copy)]
-struct Point3Mm {
-    x: f32,
-    y: f32,
-}
-
-#[derive(Clone, Copy, Default)]
-struct Vector3 {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-
-impl Vector3 {
-    fn norm(self) -> f32 {
-        sqrtf(self.x * self.x + self.y * self.y + self.z * self.z)
-    }
-}
 
 type PwmPinA<'a, const OP: u8> = PwmPin<'a, MCPWM0<'a>, OP, true>;
 type PwmPinB<'a, const OP: u8> = PwmPin<'a, MCPWM0<'a>, OP, false>;
@@ -160,12 +126,6 @@ struct MotorDriveState {
     motor_enabled: bool,
 }
 
-struct ImuEstimatorState {
-    last_theta_dot_dps: Option<f32>,
-    filtered_theta_ddot_dps2: f32,
-    filtered_theta_deg: Option<f32>,
-}
-
 struct App<'d> {
     serial: Uart<'d, Blocking>,
     delay: esp_hal::delay::Delay,
@@ -178,7 +138,7 @@ struct App<'d> {
     hall_configured: bool,
     imu_verified: bool,
     imu_awake: bool,
-    imu_estimator: ImuEstimatorState,
+    imu_estimator: ImuEstimator,
     controller: PendulumController,
     motor_drive_state: MotorDriveState,
     geometry: PendulumGeometry,
@@ -286,7 +246,7 @@ fn main() -> ! {
         hall_configured: false,
         imu_verified: false,
         imu_awake: false,
-        imu_estimator: ImuEstimatorState::new(),
+        imu_estimator: ImuEstimator::new(dt_s()),
         controller: PendulumController::new(Default::default()),
         motor_drive_state: MotorDriveState::new(),
         geometry: default_pendulum().geometry,
@@ -350,11 +310,10 @@ impl<'d> App<'d> {
             let loop_start = Instant::now();
             let current_sample = self.current_sensor.read();
             let hall = read_hall_telemetry(&mut self.i2c, &mut self.hall_configured);
-            let estimate = read_pendulum_estimate(
+            let estimate = self.imu_estimator.read_pendulum_estimate(
                 &mut self.i2c,
                 &mut self.imu_verified,
                 &mut self.imu_awake,
-                &mut self.imu_estimator,
                 &self.geometry,
             );
             let control = update_control_loop(
@@ -681,61 +640,6 @@ impl MotorDriveState {
         motor_drive.coast();
         self.uq_v = 0.0;
         self.motor_enabled = false;
-    }
-}
-
-impl ImuEstimatorState {
-    fn new() -> Self {
-        Self {
-            last_theta_dot_dps: None,
-            filtered_theta_ddot_dps2: 0.0,
-            filtered_theta_deg: None,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.last_theta_dot_dps = None;
-        self.filtered_theta_ddot_dps2 = 0.0;
-        self.filtered_theta_deg = None;
-    }
-
-    fn observe_theta_dot(&mut self, theta_dot_dps: f32) -> f32 {
-        let instant_theta_ddot_dps2 = self
-            .last_theta_dot_dps
-            .map(|previous| (theta_dot_dps - previous) / dt_s())
-            .unwrap_or(0.0);
-        self.last_theta_dot_dps = Some(theta_dot_dps);
-        self.filtered_theta_ddot_dps2 =
-            0.85 * self.filtered_theta_ddot_dps2 + 0.15 * instant_theta_ddot_dps2;
-        self.filtered_theta_ddot_dps2
-    }
-
-    fn observe_theta_from_accel(
-        &mut self,
-        theta_dot_dps: f32,
-        accel_theta_deg: f32,
-        accel_gravity_magnitude_g: f32,
-    ) -> f32 {
-        let predicted_theta_deg = self
-            .filtered_theta_deg
-            .map(|theta_deg| theta_deg + theta_dot_dps * dt_s())
-            .unwrap_or(accel_theta_deg);
-        let accel_error_deg = wrap_angle_delta_deg(accel_theta_deg - predicted_theta_deg);
-        let accel_is_reliable = accel_gravity_magnitude_g >= MIN_ACCEL_GRAVITY_G
-            && accel_gravity_magnitude_g <= MAX_ACCEL_GRAVITY_G
-            && accel_error_deg.abs() <= MAX_ACCEL_CORRECTION_ERROR_DEG;
-        let correction_deg = if accel_is_reliable {
-            clamp(
-                accel_error_deg * ACCEL_CORRECTION_GAIN,
-                -MAX_ACCEL_CORRECTION_STEP_DEG,
-                MAX_ACCEL_CORRECTION_STEP_DEG,
-            )
-        } else {
-            0.0
-        };
-        let theta_deg = wrap_signed_degrees(predicted_theta_deg + correction_deg);
-        self.filtered_theta_deg = Some(theta_deg);
-        theta_deg
     }
 }
 
@@ -1149,10 +1053,6 @@ fn dt_s() -> f32 {
     CONTROL_PERIOD_MS as f32 / 1_000.0
 }
 
-fn degrees_to_radians(angle_deg: f32) -> f32 {
-    angle_deg * (core::f32::consts::PI / 180.0)
-}
-
 fn electrical_sector(electrical_angle_deg: f32) -> u8 {
     ((wrap_degrees(electrical_angle_deg) / 60.0) as u8) % 6
 }
@@ -1167,16 +1067,6 @@ fn max_phase_current_amps(sample: &CurrentSample) -> f32 {
     let ina_w = sample.ina_w.amps.abs();
     let uv = if ina_u > ina_v { ina_u } else { ina_v };
     if uv > ina_w { uv } else { ina_w }
-}
-
-fn clamp(value: f32, min: f32, max: f32) -> f32 {
-    if value < min {
-        min
-    } else if value > max {
-        max
-    } else {
-        value
-    }
 }
 
 fn read_hall_telemetry(
@@ -1198,53 +1088,6 @@ fn read_hall_telemetry(
     match tmag5273_read_measurement(i2c, HALL_SENSOR_ADDR) {
         Ok(measurement) => HallTelemetry::Measurement(measurement),
         Err(register) => HallTelemetry::ReadError { register },
-    }
-}
-
-fn read_pendulum_estimate(
-    i2c: &mut I2c<'_, Blocking>,
-    imu_verified: &mut bool,
-    imu_awake: &mut bool,
-    imu_estimator: &mut ImuEstimatorState,
-    geometry: &PendulumGeometry,
-) -> PendulumEstimateTelemetry {
-    if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
-        *imu_verified = false;
-        *imu_awake = false;
-        imu_estimator.reset();
-        return PendulumEstimateTelemetry::Missing;
-    }
-
-    if !*imu_verified {
-        match imu_verify(i2c, GY521_DEFAULT_I2C_ADDR) {
-            Ok(()) => *imu_verified = true,
-            Err(ImuProbeError::RegisterRead) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::Missing;
-            }
-            Err(ImuProbeError::UnexpectedWhoAmI(value)) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::UnexpectedWhoAmI { value };
-            }
-        }
-    }
-
-    if !*imu_awake {
-        match imu_wake(i2c, GY521_DEFAULT_I2C_ADDR) {
-            Ok(()) => *imu_awake = true,
-            Err(register) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::WakeError { register };
-            }
-        }
-    }
-
-    match imu_read_pendulum_measurement(i2c, GY521_DEFAULT_I2C_ADDR, imu_estimator, geometry) {
-        Ok(measurement) => PendulumEstimateTelemetry::Measurement(measurement),
-        Err(register) => {
-            imu_estimator.reset();
-            PendulumEstimateTelemetry::ReadError { register }
-        }
     }
 }
 
@@ -1304,133 +1147,6 @@ fn tmag5273_read_measurement(
     })
 }
 
-fn imu_verify(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), ImuProbeError> {
-    let mut who_am_i = [0_u8; 1];
-    i2c.write_read(address, &[MPU_REG_WHO_AM_I], &mut who_am_i)
-        .map_err(|_| ImuProbeError::RegisterRead)?;
-    if who_am_i[0] != MPU6050_WHO_AM_I_VALUE {
-        return Err(ImuProbeError::UnexpectedWhoAmI(who_am_i[0]));
-    }
-    Ok(())
-}
-
-fn imu_wake(i2c: &mut I2c<'_, Blocking>, address: u8) -> Result<(), u8> {
-    i2c.write(address, &[MPU_REG_PWR_MGMT_1, 0x01])
-        .map_err(|_| MPU_REG_PWR_MGMT_1)?;
-    i2c.write(address, &[MPU_REG_CONFIG, 0x03])
-        .map_err(|_| MPU_REG_CONFIG)?;
-    i2c.write(address, &[MPU_REG_GYRO_CONFIG, 0x10])
-        .map_err(|_| MPU_REG_GYRO_CONFIG)?;
-    i2c.write(address, &[MPU_REG_ACCEL_CONFIG, 0x08])
-        .map_err(|_| MPU_REG_ACCEL_CONFIG)?;
-    Ok(())
-}
-
-fn imu_read_pendulum_measurement(
-    i2c: &mut I2c<'_, Blocking>,
-    address: u8,
-    imu_estimator: &mut ImuEstimatorState,
-    geometry: &PendulumGeometry,
-) -> Result<PendulumEstimateMeasurement, u8> {
-    let mut buffer = [0_u8; 14];
-    i2c.write_read(address, &[MPU_REG_ACCEL_XOUT_H], &mut buffer)
-        .map_err(|_| MPU_REG_ACCEL_XOUT_H)?;
-
-    let ax_raw = i16::from_be_bytes([buffer[0], buffer[1]]);
-    let ay_raw = i16::from_be_bytes([buffer[2], buffer[3]]);
-    let az_raw = i16::from_be_bytes([buffer[4], buffer[5]]);
-    let gx_raw = i16::from_be_bytes([buffer[8], buffer[9]]);
-    let gy_raw = i16::from_be_bytes([buffer[10], buffer[11]]);
-    let gz_raw = i16::from_be_bytes([buffer[12], buffer[13]]);
-
-    let accel_imu_g = Vector3 {
-        x: ax_raw as f32 / ACCEL_LSB_PER_G,
-        y: ay_raw as f32 / ACCEL_LSB_PER_G,
-        z: az_raw as f32 / ACCEL_LSB_PER_G,
-    };
-    let gyro_imu_dps = Vector3 {
-        x: gx_raw as f32 / GYRO_LSB_PER_DPS,
-        y: gy_raw as f32 / GYRO_LSB_PER_DPS,
-        z: gz_raw as f32 / GYRO_LSB_PER_DPS,
-    };
-    let accel_body_g = transform_imu_vector_to_body(accel_imu_g, geometry.imu_mount.axes_in_body);
-    let gyro_body_dps = transform_imu_vector_to_body(gyro_imu_dps, geometry.imu_mount.axes_in_body);
-
-    let theta_dot_dps = -gyro_body_dps.z;
-    let theta_ddot_dps2 = imu_estimator.observe_theta_dot(theta_dot_dps);
-    let pivot_to_imu_body_mm = pivot_to_imu_body_mm(geometry);
-    let rotational_specific_force_g = rotational_specific_force_g(
-        theta_dot_dps,
-        theta_ddot_dps2,
-        pivot_to_imu_body_mm,
-    );
-    let gravity_only_accel_body_g = Vector3 {
-        x: accel_body_g.x - rotational_specific_force_g.x,
-        y: accel_body_g.y - rotational_specific_force_g.y,
-        z: accel_body_g.z - rotational_specific_force_g.z,
-    };
-    let accel_theta_deg = atan2f(-gravity_only_accel_body_g.x, gravity_only_accel_body_g.y)
-        * (180.0 / core::f32::consts::PI);
-    let accel_gravity_magnitude_g = gravity_only_accel_body_g.norm();
-    let theta_deg = imu_estimator.observe_theta_from_accel(
-        theta_dot_dps,
-        accel_theta_deg,
-        accel_gravity_magnitude_g,
-    );
-
-    Ok(PendulumEstimateMeasurement {
-        theta_deg,
-        theta_dot_dps,
-    })
-}
-
-fn pivot_to_imu_body_mm(geometry: &PendulumGeometry) -> Point3Mm {
-    Point3Mm {
-        x: (geometry.motor_mount.center_from_pivot.x + geometry.imu_mount.translation_from_motor.x)
-            .get::<millimeter>() as f32,
-        y: (geometry.motor_mount.center_from_pivot.y + geometry.imu_mount.translation_from_motor.y)
-            .get::<millimeter>() as f32,
-    }
-}
-
-fn rotational_specific_force_g(
-    theta_dot_dps: f32,
-    theta_ddot_dps2: f32,
-    pivot_to_imu_body_mm: Point3Mm,
-) -> Vector3 {
-    const G_M_PER_S2: f32 = 9.80665;
-
-    let omega_rad_s = degrees_to_radians(theta_dot_dps);
-    let alpha_rad_s2 = degrees_to_radians(theta_ddot_dps2);
-    let rx_m = pivot_to_imu_body_mm.x / 1_000.0;
-    let ry_m = pivot_to_imu_body_mm.y / 1_000.0;
-
-    Vector3 {
-        x: ((-alpha_rad_s2 * ry_m) - (omega_rad_s * omega_rad_s * rx_m)) / G_M_PER_S2,
-        y: ((alpha_rad_s2 * rx_m) - (omega_rad_s * omega_rad_s * ry_m)) / G_M_PER_S2,
-        z: 0.0,
-    }
-}
-
-fn transform_imu_vector_to_body(vector: Vector3, axes_in_body: ImuAxesInBody) -> Vector3 {
-    let mut body = Vector3::default();
-    accumulate_axis_contribution(&mut body, vector.x, axes_in_body.x_axis);
-    accumulate_axis_contribution(&mut body, vector.y, axes_in_body.y_axis);
-    accumulate_axis_contribution(&mut body, vector.z, axes_in_body.z_axis);
-    body
-}
-
-fn accumulate_axis_contribution(body: &mut Vector3, value: f32, axis: BodyAxis3) {
-    match axis {
-        BodyAxis3::Right => body.x += value,
-        BodyAxis3::Left => body.x -= value,
-        BodyAxis3::Up => body.y += value,
-        BodyAxis3::Down => body.y -= value,
-        BodyAxis3::TowardViewer => body.z += value,
-        BodyAxis3::AwayFromViewer => body.z -= value,
-    }
-}
-
 fn decode_temperature_c(msb: u8, lsb: u8) -> f32 {
     let raw = i16::from_be_bytes([msb, lsb]);
     TMAG5273_TEMP_SENSE_T0_C + ((raw - TMAG5273_TEMP_ADC_T0) as f32 / TMAG5273_TEMP_ADC_RES)
@@ -1446,41 +1162,4 @@ fn decode_angle_deg(msb: u8, lsb: u8) -> f32 {
     let integer = ((raw >> 4) & 0x01FF) as f32;
     let fraction = (raw & 0x000F) as f32 / 16.0;
     integer + fraction
-}
-
-fn wrap_degrees(angle_deg: f32) -> f32 {
-    let mut wrapped = angle_deg;
-    while wrapped >= 360.0 {
-        wrapped -= 360.0;
-    }
-    while wrapped < 0.0 {
-        wrapped += 360.0;
-    }
-    wrapped
-}
-
-fn wrap_signed_degrees(angle_deg: f32) -> f32 {
-    let mut wrapped = angle_deg;
-    while wrapped > 180.0 {
-        wrapped -= 360.0;
-    }
-    while wrapped <= -180.0 {
-        wrapped += 360.0;
-    }
-    wrapped
-}
-
-fn unwrap_near(reference_unwrapped_deg: f32, raw_wrapped_deg: f32) -> f32 {
-    reference_unwrapped_deg
-        + wrap_angle_delta_deg(raw_wrapped_deg - wrap_degrees(reference_unwrapped_deg))
-}
-
-fn wrap_angle_delta_deg(delta: f32) -> f32 {
-    if delta > 180.0 {
-        delta - 360.0
-    } else if delta < -180.0 {
-        delta + 360.0
-    } else {
-        delta
-    }
 }
