@@ -2,10 +2,8 @@ use libm::{atan2f, sqrtf};
 use uom::si::{
     acceleration::meter_per_second_squared,
     angle::degree,
-    angular_acceleration::radian_per_second_squared,
-    angular_velocity::{degree_per_second, radian_per_second},
-    f32::{Acceleration, Angle, AngularAcceleration, AngularVelocity, Length},
-    length::{meter, millimeter},
+    angular_velocity::degree_per_second,
+    f32::{Acceleration, Angle, AngularVelocity},
 };
 
 use crate::{
@@ -13,11 +11,7 @@ use crate::{
     protocol::PendulumEstimateMeasurement,
 };
 
-const ACCEL_CORRECTION_GAIN: f32 = 0.08;
-const MAX_ACCEL_CORRECTION_STEP_DEG: f32 = 2.0;
-const MAX_ACCEL_CORRECTION_ERROR_DEG: f32 = 35.0;
-const MIN_ACCEL_GRAVITY_G: f32 = 0.75;
-const MAX_ACCEL_GRAVITY_G: f32 = 1.25;
+const COMPLEMENTARY_FILTER_ALPHA: f32 = 0.98;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Acceleration3 {
@@ -48,33 +42,27 @@ pub struct RawImuSample {
     pub gyro: AngularVelocity3,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Point2Length {
-    x: Length,
-    y: Length,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct PendulumImuEstimator {
     dt_s: f32,
-    last_theta_dot: Option<AngularVelocity>,
-    filtered_theta_ddot: AngularAcceleration,
+    alpha: f32,
     filtered_theta: Option<Angle>,
 }
 
 impl PendulumImuEstimator {
     pub fn new(dt_s: f32) -> Self {
+        Self::with_alpha(dt_s, COMPLEMENTARY_FILTER_ALPHA)
+    }
+
+    pub fn with_alpha(dt_s: f32, alpha: f32) -> Self {
         Self {
             dt_s,
-            last_theta_dot: None,
-            filtered_theta_ddot: AngularAcceleration::new::<radian_per_second_squared>(0.0),
+            alpha,
             filtered_theta: None,
         }
     }
 
     pub fn reset(&mut self) {
-        self.last_theta_dot = None;
-        self.filtered_theta_ddot = AngularAcceleration::new::<radian_per_second_squared>(0.0);
         self.filtered_theta = None;
     }
 
@@ -87,26 +75,13 @@ impl PendulumImuEstimator {
         let gyro_body = transform_angular_velocity_to_body(sample.gyro, geometry.imu_mount.axes_in_body);
 
         let theta_dot = -gyro_body.z;
-        let theta_ddot = self.observe_theta_dot(theta_dot);
-        let pivot_to_imu_body = pivot_to_imu_body(geometry);
-        let rotational_specific_force = rotational_specific_force(
-            theta_dot,
-            theta_ddot,
-            pivot_to_imu_body,
-        );
-        let gravity_only_accel = Acceleration3 {
-            x: accel_body.x - rotational_specific_force.x,
-            y: accel_body.y - rotational_specific_force.y,
-            z: accel_body.z - rotational_specific_force.z,
-        };
         let accel_theta = Angle::new::<degree>(
             atan2f(
-                -gravity_only_accel.x.get::<meter_per_second_squared>(),
-                gravity_only_accel.y.get::<meter_per_second_squared>(),
+                -accel_body.x.get::<meter_per_second_squared>(),
+                accel_body.y.get::<meter_per_second_squared>(),
             ) * (180.0 / core::f32::consts::PI),
         );
-        let accel_gravity_magnitude = gravity_only_accel.norm();
-        let theta = self.observe_theta_from_accel(theta_dot, accel_theta, accel_gravity_magnitude);
+        let theta = self.observe_theta(theta_dot, accel_theta);
 
         PendulumEstimateMeasurement {
             theta_deg: theta.get::<degree>(),
@@ -114,29 +89,10 @@ impl PendulumImuEstimator {
         }
     }
 
-    fn observe_theta_dot(&mut self, theta_dot: AngularVelocity) -> AngularAcceleration {
-        let instant_theta_ddot = self
-            .last_theta_dot
-            .map(|previous| {
-                AngularAcceleration::new::<radian_per_second_squared>(
-                    (theta_dot.get::<radian_per_second>() - previous.get::<radian_per_second>())
-                        / self.dt_s,
-                )
-            })
-            .unwrap_or_else(|| AngularAcceleration::new::<radian_per_second_squared>(0.0));
-        self.last_theta_dot = Some(theta_dot);
-        self.filtered_theta_ddot = AngularAcceleration::new::<radian_per_second_squared>(
-            0.85 * self.filtered_theta_ddot.get::<radian_per_second_squared>()
-                + 0.15 * instant_theta_ddot.get::<radian_per_second_squared>(),
-        );
-        self.filtered_theta_ddot
-    }
-
-    fn observe_theta_from_accel(
+    fn observe_theta(
         &mut self,
         theta_dot: AngularVelocity,
         accel_theta: Angle,
-        accel_gravity_magnitude: Acceleration,
     ) -> Angle {
         let predicted_theta = self
             .filtered_theta
@@ -148,60 +104,11 @@ impl PendulumImuEstimator {
             .unwrap_or(accel_theta);
         let accel_error_deg =
             wrap_angle_delta_deg(accel_theta.get::<degree>() - predicted_theta.get::<degree>());
-        let accel_gravity_magnitude_mps2 = accel_gravity_magnitude.get::<meter_per_second_squared>();
-        let min_gravity = MIN_ACCEL_GRAVITY_G * standard_gravity_mps2();
-        let max_gravity = MAX_ACCEL_GRAVITY_G * standard_gravity_mps2();
-        let accel_is_reliable = accel_gravity_magnitude_mps2 >= min_gravity
-            && accel_gravity_magnitude_mps2 <= max_gravity
-            && accel_error_deg.abs() <= MAX_ACCEL_CORRECTION_ERROR_DEG;
-        let correction = if accel_is_reliable {
-            Angle::new::<degree>(clamp(
-                accel_error_deg * ACCEL_CORRECTION_GAIN,
-                -MAX_ACCEL_CORRECTION_STEP_DEG,
-                MAX_ACCEL_CORRECTION_STEP_DEG,
-            ))
-        } else {
-            Angle::new::<degree>(0.0)
-        };
         let theta = Angle::new::<degree>(wrap_signed_degrees(
-            predicted_theta.get::<degree>() + correction.get::<degree>(),
+            predicted_theta.get::<degree>() + (1.0 - self.alpha) * accel_error_deg,
         ));
         self.filtered_theta = Some(theta);
         theta
-    }
-}
-
-fn pivot_to_imu_body(geometry: &PendulumGeometry) -> Point2Length {
-    Point2Length {
-        x: Length::new::<millimeter>(
-            (geometry.motor_mount.center_from_pivot.x + geometry.imu_mount.translation_from_motor.x)
-                .get::<millimeter>() as f32,
-        ),
-        y: Length::new::<millimeter>(
-            (geometry.motor_mount.center_from_pivot.y + geometry.imu_mount.translation_from_motor.y)
-                .get::<millimeter>() as f32,
-        ),
-    }
-}
-
-fn rotational_specific_force(
-    theta_dot: AngularVelocity,
-    theta_ddot: AngularAcceleration,
-    pivot_to_imu_body: Point2Length,
-) -> Acceleration3 {
-    let omega_rad_s = theta_dot.get::<radian_per_second>();
-    let alpha_rad_s2 = theta_ddot.get::<radian_per_second_squared>();
-    let rx_m = pivot_to_imu_body.x.get::<meter>();
-    let ry_m = pivot_to_imu_body.y.get::<meter>();
-
-    Acceleration3 {
-        x: Acceleration::new::<meter_per_second_squared>(
-            (-alpha_rad_s2 * ry_m) - (omega_rad_s * omega_rad_s * rx_m),
-        ),
-        y: Acceleration::new::<meter_per_second_squared>(
-            (alpha_rad_s2 * rx_m) - (omega_rad_s * omega_rad_s * ry_m),
-        ),
-        z: Acceleration::new::<meter_per_second_squared>(0.0),
     }
 }
 
@@ -250,20 +157,6 @@ fn accumulate_angular_axis_contribution(
     }
 }
 
-fn clamp(value: f32, min: f32, max: f32) -> f32 {
-    if value < min {
-        min
-    } else if value > max {
-        max
-    } else {
-        value
-    }
-}
-
-fn standard_gravity_mps2() -> f32 {
-    9.80665
-}
-
 fn wrap_signed_degrees(angle_deg: f32) -> f32 {
     let mut wrapped = angle_deg;
     while wrapped > 180.0 {
@@ -299,7 +192,7 @@ mod tests {
             RawImuSample {
                 accel: Acceleration3 {
                     x: Acceleration::new::<meter_per_second_squared>(0.0),
-                    y: Acceleration::new::<meter_per_second_squared>(-standard_gravity_mps2()),
+                    y: Acceleration::new::<meter_per_second_squared>(-9.80665),
                     z: Acceleration::new::<meter_per_second_squared>(0.0),
                 },
                 gyro: AngularVelocity3::default(),
