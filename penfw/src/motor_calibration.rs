@@ -4,7 +4,7 @@ pub use pendulum_lib::StoredMotorCalibration;
 use pendulum_lib::{HallTelemetry, settings_record::RecordLoad};
 
 use crate::{
-    hall::read_hall_telemetry,
+    hall::{HallSensor, read_hall_telemetry},
     math::{degrees_to_radians, unwrap_near, wrap_degrees},
     motor_drive::{PwmMotorDrive, VOLTAGE_LIMIT_V, simplefoc_sine_pwm_phase_voltages},
     settings::{SettingsError, SettingsStorage},
@@ -72,7 +72,7 @@ pub fn save_motor_calibration(calibration: StoredMotorCalibration) -> Result<(),
 
 pub fn calibrate_hall_electrical_cycle(
     i2c: &mut I2c<'_, Blocking>,
-    hall_configured: &mut bool,
+    hall: &mut HallSensor,
     delay: &esp_hal::delay::Delay,
     motor_drive: &mut PwmMotorDrive<'_>,
 ) -> Option<HallElectricalCalibration> {
@@ -102,7 +102,7 @@ pub fn calibrate_hall_electrical_cycle(
         );
         motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
 
-        if let HallTelemetry::Measurement(measurement) = read_hall_telemetry(i2c, hall_configured) {
+        if let HallTelemetry::Measurement(measurement) = read_hall_telemetry(i2c, hall) {
             let hall_unwrapped_deg = match last_hall_unwrapped_deg {
                 Some(previous) => unwrap_near(previous, measurement.angle_deg),
                 None => measurement.angle_deg,
@@ -166,7 +166,7 @@ pub fn calibrate_hall_electrical_cycle(
 
 pub fn refine_torque_phase_offset(
     i2c: &mut I2c<'_, Blocking>,
-    hall_configured: &mut bool,
+    hall: &mut HallSensor,
     delay: &esp_hal::delay::Delay,
     motor_drive: &mut PwmMotorDrive<'_>,
     calibration: HallElectricalCalibration,
@@ -179,7 +179,7 @@ pub fn refine_torque_phase_offset(
         for candidate_torque_sign in [1.0_f32, -1.0_f32] {
             let pos_travel_deg = measure_phase_search_travel(
                 i2c,
-                hall_configured,
+                hall,
                 delay,
                 motor_drive,
                 calibration,
@@ -188,7 +188,7 @@ pub fn refine_torque_phase_offset(
             )?;
             let neg_travel_deg = measure_phase_search_travel(
                 i2c,
-                hall_configured,
+                hall,
                 delay,
                 motor_drive,
                 calibration,
@@ -232,7 +232,7 @@ pub fn refine_torque_phase_offset(
 
 fn measure_phase_search_travel(
     i2c: &mut I2c<'_, Blocking>,
-    hall_configured: &mut bool,
+    hall: &mut HallSensor,
     delay: &esp_hal::delay::Delay,
     motor_drive: &mut PwmMotorDrive<'_>,
     calibration: HallElectricalCalibration,
@@ -246,7 +246,7 @@ fn measure_phase_search_travel(
 
     let mut loop_index = 0_u32;
     while loop_index < PHASE_SEARCH_LOOPS {
-        if let HallTelemetry::Measurement(measurement) = read_hall_telemetry(i2c, hall_configured) {
+        if let HallTelemetry::Measurement(measurement) = read_hall_telemetry(i2c, hall) {
             let hall_unwrapped_deg = match last_unwrapped_deg {
                 Some(previous) => unwrap_near(previous, measurement.angle_deg),
                 None => measurement.angle_deg,

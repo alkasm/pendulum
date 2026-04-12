@@ -17,65 +17,91 @@ use crate::{
     },
 };
 
+pub struct Gy521Session {
+    verified: bool,
+    awake: bool,
+}
+
+impl Gy521Session {
+    pub fn new() -> Self {
+        Self {
+            verified: false,
+            awake: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.verified = false;
+        self.awake = false;
+    }
+
+    pub fn read_estimate(
+        &mut self,
+        i2c: &mut I2c<'_, Blocking>,
+        imu_estimator: &mut PendulumImuEstimator,
+        geometry: &PendulumGeometry,
+    ) -> PendulumEstimateTelemetry {
+        if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
+            self.reset();
+            imu_estimator.reset();
+            return PendulumEstimateTelemetry::Missing;
+        }
+
+        if !self.verified {
+            match verify_address(i2c, GY521_DEFAULT_I2C_ADDR) {
+                Ok(()) => self.verified = true,
+                Err(Gy521Error::RegisterRead(_)) => {
+                    imu_estimator.reset();
+                    return PendulumEstimateTelemetry::Missing;
+                }
+                Err(Gy521Error::UnexpectedWhoAmI(value)) => {
+                    imu_estimator.reset();
+                    return PendulumEstimateTelemetry::UnexpectedWhoAmI { value };
+                }
+            }
+        }
+
+        if !self.awake {
+            match wake_device(i2c, GY521_DEFAULT_I2C_ADDR) {
+                Ok(()) => self.awake = true,
+                Err(register) => {
+                    imu_estimator.reset();
+                    return PendulumEstimateTelemetry::WakeError { register };
+                }
+            }
+        }
+
+        match read_raw_measurement(i2c, GY521_DEFAULT_I2C_ADDR) {
+            Ok(measurement) => PendulumEstimateTelemetry::Measurement(imu_estimator.step(
+                geometry,
+                RawImuSample {
+                    accel: Acceleration3 {
+                        x: accel_from_g(measurement.ax_g),
+                        y: accel_from_g(measurement.ay_g),
+                        z: accel_from_g(measurement.az_g),
+                    },
+                    gyro: AngularVelocity3 {
+                        x: AngularVelocity::new::<degree_per_second>(measurement.gx_dps),
+                        y: AngularVelocity::new::<degree_per_second>(measurement.gy_dps),
+                        z: AngularVelocity::new::<degree_per_second>(measurement.gz_dps),
+                    },
+                },
+            )),
+            Err(register) => {
+                imu_estimator.reset();
+                PendulumEstimateTelemetry::ReadError { register }
+            }
+        }
+    }
+}
+
 pub fn read_pendulum_estimate(
     i2c: &mut I2c<'_, Blocking>,
-    imu_verified: &mut bool,
-    imu_awake: &mut bool,
+    imu: &mut Gy521Session,
     imu_estimator: &mut PendulumImuEstimator,
     geometry: &PendulumGeometry,
 ) -> PendulumEstimateTelemetry {
-    if !i2c_device_present(i2c, GY521_DEFAULT_I2C_ADDR) {
-        *imu_verified = false;
-        *imu_awake = false;
-        imu_estimator.reset();
-        return PendulumEstimateTelemetry::Missing;
-    }
-
-    if !*imu_verified {
-        match verify_address(i2c, GY521_DEFAULT_I2C_ADDR) {
-            Ok(()) => *imu_verified = true,
-            Err(Gy521Error::RegisterRead(_)) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::Missing;
-            }
-            Err(Gy521Error::UnexpectedWhoAmI(value)) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::UnexpectedWhoAmI { value };
-            }
-        }
-    }
-
-    if !*imu_awake {
-        match wake_device(i2c, GY521_DEFAULT_I2C_ADDR) {
-            Ok(()) => *imu_awake = true,
-            Err(register) => {
-                imu_estimator.reset();
-                return PendulumEstimateTelemetry::WakeError { register };
-            }
-        }
-    }
-
-    match read_raw_measurement(i2c, GY521_DEFAULT_I2C_ADDR) {
-        Ok(measurement) => PendulumEstimateTelemetry::Measurement(imu_estimator.step(
-            geometry,
-            RawImuSample {
-                accel: Acceleration3 {
-                    x: accel_from_g(measurement.ax_g),
-                    y: accel_from_g(measurement.ay_g),
-                    z: accel_from_g(measurement.az_g),
-                },
-                gyro: AngularVelocity3 {
-                    x: AngularVelocity::new::<degree_per_second>(measurement.gx_dps),
-                    y: AngularVelocity::new::<degree_per_second>(measurement.gy_dps),
-                    z: AngularVelocity::new::<degree_per_second>(measurement.gz_dps),
-                },
-            },
-        )),
-        Err(register) => {
-            imu_estimator.reset();
-            PendulumEstimateTelemetry::ReadError { register }
-        }
-    }
+    imu.read_estimate(i2c, imu_estimator, geometry)
 }
 
 fn accel_from_g(value_g: f32) -> Acceleration {

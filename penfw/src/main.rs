@@ -34,8 +34,8 @@ use esp_hal::{
     uart::Uart,
 };
 use hw::{CurrentSample, CurrentSensor};
-use hall::read_hall_telemetry;
-use imu::read_pendulum_estimate;
+use hall::{read_hall_telemetry, HallSensor};
+use imu::{read_pendulum_estimate, Gy521Session};
 use motor_calibration::{
     HallElectricalCalibration, StoredMotorCalibration, calibrate_hall_electrical_cycle,
     refine_torque_phase_offset,
@@ -76,9 +76,8 @@ struct App<'d> {
     current_sensor: CurrentSensor<'d>,
     motor_drive: PwmMotorDrive<'d>,
     i2c: I2c<'d, Blocking>,
-    hall_configured: bool,
-    imu_verified: bool,
-    imu_awake: bool,
+    hall_sensor: HallSensor,
+    imu_sensor: Gy521Session,
     imu_estimator: PendulumImuEstimator,
     controller: PendulumController,
     motor_drive_state: MotorDriveState,
@@ -184,9 +183,8 @@ fn main() -> ! {
         current_sensor,
         motor_drive,
         i2c,
-        hall_configured: false,
-        imu_verified: false,
-        imu_awake: false,
+        hall_sensor: HallSensor::new(),
+        imu_sensor: Gy521Session::new(),
         imu_estimator: PendulumImuEstimator::new(dt_s()),
         controller: PendulumController::new(Default::default()),
         motor_drive_state: MotorDriveState::new(),
@@ -250,11 +248,10 @@ impl<'d> App<'d> {
         while matches!(self.status.state, DeviceState::Running) {
             let loop_start = Instant::now();
             let current_sample = self.current_sensor.read();
-            let hall = read_hall_telemetry(&mut self.i2c, &mut self.hall_configured);
+            let hall = read_hall_telemetry(&mut self.i2c, &mut self.hall_sensor);
             let estimate = read_pendulum_estimate(
                 &mut self.i2c,
-                &mut self.imu_verified,
-                &mut self.imu_awake,
+                &mut self.imu_sensor,
                 &mut self.imu_estimator,
                 &self.geometry,
             );
@@ -409,14 +406,14 @@ impl<'d> App<'d> {
 
         let calibration = calibrate_hall_electrical_cycle(
             &mut self.i2c,
-            &mut self.hall_configured,
+            &mut self.hall_sensor,
             &self.delay,
             &mut self.motor_drive,
         )
         .and_then(|calibration| {
             refine_torque_phase_offset(
                 &mut self.i2c,
-                &mut self.hall_configured,
+                &mut self.hall_sensor,
                 &self.delay,
                 &mut self.motor_drive,
                 calibration,
@@ -483,6 +480,8 @@ impl<'d> App<'d> {
         self.disable_outputs();
         self.controller.reset_runtime();
         self.motor_drive_state.reset_runtime();
+        self.hall_sensor.reset();
+        self.imu_sensor.reset();
         self.imu_estimator.reset();
         self.last_loop_start = None;
         self.status.state = DeviceState::Running;
@@ -495,6 +494,8 @@ impl<'d> App<'d> {
         self.disable_outputs();
         self.controller.reset_runtime();
         self.motor_drive_state.reset_runtime();
+        self.hall_sensor.reset();
+        self.imu_sensor.reset();
         self.imu_estimator.reset();
         self.last_loop_start = None;
         self.status.state = DeviceState::Service;
