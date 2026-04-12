@@ -6,12 +6,19 @@ use std::{
 use bevy_ecs::prelude::*;
 
 use crate::{
-    controller::PdController,
+    controller::{ControllerInput, PendulumController},
     imu::ImuSample,
     motor::{MotorCommand, MotorTelemetry},
     telemetry::{TelemetryFrame, TelemetrySender},
 };
-use uom::si::{f64::{Angle, Time}, time::second};
+use uom::si::{
+    angle::degree,
+    angular_velocity::degree_per_second,
+    electric_current::ampere,
+    f64::{Angle, AngularVelocity, Time, Torque},
+    time::second,
+    torque::newton_meter,
+};
 
 pub trait StepRuntime: Send + 'static {
     fn step(&mut self);
@@ -20,13 +27,13 @@ pub trait StepRuntime: Send + 'static {
 
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct ControllerResource {
-    controller: PdController,
+    controller: PendulumController,
 }
 
 impl ControllerResource {
-    pub fn new(kp: f64, kd: f64) -> Self {
+    pub fn new(controller: PendulumController) -> Self {
         Self {
-            controller: PdController::new(kp, kd),
+            controller,
         }
     }
 }
@@ -85,17 +92,26 @@ where
     }
 }
 
-pub fn pd_control_system(
-    controller: Res<'_, ControllerResource>,
+pub fn control_system(
+    mut controller: ResMut<'_, ControllerResource>,
     imu: Res<'_, ImuReading>,
+    wheel_angle: Res<'_, WheelAngleEstimate>,
     mut motor_state: ResMut<'_, MotorState>,
 ) {
-    let torque_command = controller
+    let output = controller
         .controller
-        .torque_command(imu.sample.theta, imu.sample.theta_dot);
+        .step(ControllerInput {
+            hall_angle_deg: Some(wheel_angle.angle.get::<degree>() as f32),
+            theta_deg: Some(imu.sample.theta.get::<degree>() as f32),
+            theta_dot_dps: Some(imu.sample.theta_dot.get::<degree_per_second>() as f32),
+            max_phase_current_a: motor_state.telemetry.phase_current.get::<ampere>() as f32,
+            actuator_ready: true,
+        });
     motor_state.command = MotorCommand {
-        torque_command,
-        observed_wheel_speed: motor_state.telemetry.wheel_speed,
+        torque_command: Torque::new::<newton_meter>(output.torque_command_nm as f64),
+        observed_wheel_speed: AngularVelocity::new::<degree_per_second>(
+            output.wheel_speed_dps as f64,
+        ),
     };
 }
 

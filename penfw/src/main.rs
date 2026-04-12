@@ -38,6 +38,7 @@ use hw::{CurrentSample, CurrentSensor, GY521_DEFAULT_I2C_ADDR};
 use libm::{atan2f, sinf, sqrtf};
 use pendulum_lib::{
     config::default_pendulum,
+    controller::{ControllerInput, PendulumController},
     device::{boot_status, production_fault},
     pendulum::{BodyAxis3, ImuAxesInBody, PendulumGeometry},
     settings_record::RecordLoad,
@@ -54,19 +55,6 @@ use wifi::WifiValidator;
 
 const CONTROL_PERIOD_MS: u32 = 5;
 const BASELINE_SAMPLES: u32 = 64;
-const MAX_COMMAND_TORQUE_NM: f32 = 0.030;
-const MAX_PHASE_CURRENT_A: f32 = 1.2;
-const ARM_ANGLE_DEG: f32 = 12.0;
-const ARM_RATE_DPS: f32 = 20.0;
-const ARM_SAMPLE_TARGET: u16 = 3;
-const CAPTURE_ANGLE_DEG: f32 = 60.0;
-const THETA_TARGET_DEG: f32 = -2.10;
-const DRIVE_DEADBAND: f32 = 0.0;
-const DRIVE_IDLE_EPSILON: f32 = 0.0;
-const MAX_DRIVE_STEP_PER_TICK: f32 = 0.08;
-const MAX_DRIVE_REVERSAL_STEP_PER_TICK: f32 = 0.08;
-const KP_NM_PER_RAD: f32 = 0.22;
-const KD_NM_PER_RAD_S: f32 = 0.007;
 
 const PWM_FREQUENCY_HZ: u32 = 32_000;
 const PWM_PERIOD_TICKS: u16 = 2500;
@@ -166,13 +154,7 @@ impl From<StoredMotorCalibration> for HallElectricalCalibration {
     }
 }
 
-struct ControlState {
-    armed: bool,
-    arm_ready_samples: u16,
-    last_wheel_angle_deg: Option<f32>,
-    last_unwrapped_wheel_angle_deg: Option<f32>,
-    filtered_wheel_speed_dps: f32,
-    filtered_drive_command: f32,
+struct MotorDriveState {
     electrical_angle_deg: f32,
     uq_v: f32,
     motor_enabled: bool,
@@ -197,7 +179,8 @@ struct App<'d> {
     imu_verified: bool,
     imu_awake: bool,
     imu_estimator: ImuEstimatorState,
-    control_state: ControlState,
+    controller: PendulumController,
+    motor_drive_state: MotorDriveState,
     geometry: PendulumGeometry,
     control_period: Duration,
     last_loop_start: Option<Instant>,
@@ -304,7 +287,8 @@ fn main() -> ! {
         imu_verified: false,
         imu_awake: false,
         imu_estimator: ImuEstimatorState::new(),
-        control_state: ControlState::new(),
+        controller: PendulumController::new(Default::default()),
+        motor_drive_state: MotorDriveState::new(),
         geometry: default_pendulum().geometry,
         control_period: Duration::from_millis(CONTROL_PERIOD_MS as u64),
         last_loop_start: None,
@@ -374,7 +358,8 @@ impl<'d> App<'d> {
                 &self.geometry,
             );
             let control = update_control_loop(
-                &mut self.control_state,
+                &mut self.controller,
+                &mut self.motor_drive_state,
                 &mut self.motor_drive,
                 self.calibration,
                 &hall,
@@ -595,7 +580,8 @@ impl<'d> App<'d> {
 
     fn prepare_for_run(&mut self) {
         self.disable_outputs();
-        self.control_state.reset_runtime();
+        self.controller.reset_runtime();
+        self.motor_drive_state.reset_runtime();
         self.imu_estimator.reset();
         self.last_loop_start = None;
         self.status.state = DeviceState::Running;
@@ -606,7 +592,8 @@ impl<'d> App<'d> {
 
     fn transition_to_service(&mut self) {
         self.disable_outputs();
-        self.control_state.reset_runtime();
+        self.controller.reset_runtime();
+        self.motor_drive_state.reset_runtime();
         self.imu_estimator.reset();
         self.last_loop_start = None;
         self.status.state = DeviceState::Service;
@@ -622,7 +609,7 @@ impl<'d> App<'d> {
     }
 
     fn disable_outputs(&mut self) {
-        self.control_state.disable_motor(&mut self.motor_drive);
+        self.motor_drive_state.disable_motor(&mut self.motor_drive);
     }
 
     fn in_manufacturing_service(&self) -> bool {
@@ -674,15 +661,9 @@ impl<'d> App<'d> {
     }
 }
 
-impl ControlState {
+impl MotorDriveState {
     fn new() -> Self {
         Self {
-            armed: false,
-            arm_ready_samples: 0,
-            last_wheel_angle_deg: None,
-            last_unwrapped_wheel_angle_deg: None,
-            filtered_wheel_speed_dps: 0.0,
-            filtered_drive_command: 0.0,
             electrical_angle_deg: 0.0,
             uq_v: 0.0,
             motor_enabled: false,
@@ -690,12 +671,6 @@ impl ControlState {
     }
 
     fn reset_runtime(&mut self) {
-        self.armed = false;
-        self.arm_ready_samples = 0;
-        self.last_wheel_angle_deg = None;
-        self.last_unwrapped_wheel_angle_deg = None;
-        self.filtered_wheel_speed_dps = 0.0;
-        self.filtered_drive_command = 0.0;
         self.electrical_angle_deg = 0.0;
         self.uq_v = 0.0;
         self.motor_enabled = false;
@@ -704,76 +679,8 @@ impl ControlState {
     fn disable_motor(&mut self, motor_drive: &mut PwmMotorDrive<'_>) {
         motor_drive.disable();
         motor_drive.coast();
-        self.filtered_drive_command = 0.0;
         self.uq_v = 0.0;
         self.motor_enabled = false;
-    }
-
-    fn observe_wheel(&mut self, angle_deg: f32) -> f32 {
-        let instant_speed_dps = self
-            .last_wheel_angle_deg
-            .map(|previous| {
-                wrap_angle_delta_deg(angle_deg - previous) / (CONTROL_PERIOD_MS as f32 / 1_000.0)
-            })
-            .unwrap_or(0.0);
-        self.filtered_wheel_speed_dps = 0.8 * self.filtered_wheel_speed_dps + 0.2 * instant_speed_dps;
-        self.last_wheel_angle_deg = Some(angle_deg);
-        self.last_unwrapped_wheel_angle_deg = Some(match self.last_unwrapped_wheel_angle_deg {
-            Some(previous) => unwrap_near(previous, angle_deg),
-            None => angle_deg,
-        });
-        self.filtered_wheel_speed_dps
-    }
-
-    fn reset_wheel_observer(&mut self) {
-        self.last_wheel_angle_deg = None;
-        self.last_unwrapped_wheel_angle_deg = None;
-        self.filtered_wheel_speed_dps = 0.0;
-    }
-
-    fn slew_drive_command(&mut self, target: f32) -> f32 {
-        let changing_direction =
-            self.filtered_drive_command.abs() > DRIVE_IDLE_EPSILON
-                && target.abs() > DRIVE_IDLE_EPSILON
-                && self.filtered_drive_command.signum() != target.signum();
-        let max_step = if changing_direction {
-            MAX_DRIVE_REVERSAL_STEP_PER_TICK
-        } else {
-            MAX_DRIVE_STEP_PER_TICK
-        };
-        let delta = clamp(
-            target - self.filtered_drive_command,
-            -max_step,
-            max_step,
-        );
-        self.filtered_drive_command += delta;
-        self.filtered_drive_command
-    }
-
-    fn reset_arming(&mut self) {
-        self.armed = false;
-        self.arm_ready_samples = 0;
-    }
-
-    fn step_arming(&mut self, theta_deg: f32, theta_dot_dps: f32) -> bool {
-        if self.armed {
-            return true;
-        }
-
-        let inside_arm_window =
-            theta_deg.abs() <= ARM_ANGLE_DEG && theta_dot_dps.abs() <= ARM_RATE_DPS;
-
-        if inside_arm_window {
-            self.arm_ready_samples = self.arm_ready_samples.saturating_add(1);
-            if self.arm_ready_samples >= ARM_SAMPLE_TARGET {
-                self.armed = true;
-                return true;
-            }
-        } else {
-            self.arm_ready_samples = 0;
-        }
-
-        false
     }
 }
 
@@ -833,7 +740,8 @@ impl ImuEstimatorState {
 }
 
 fn update_control_loop(
-    control_state: &mut ControlState,
+    controller: &mut PendulumController,
+    drive_state: &mut MotorDriveState,
     motor_drive: &mut PwmMotorDrive<'_>,
     actuator_calibration: Option<HallElectricalCalibration>,
     hall: &HallTelemetry,
@@ -849,219 +757,77 @@ fn update_control_loop(
         _ => None,
     };
 
-    let wheel_angle_deg = hall_measurement.map(|measurement| measurement.angle_deg).unwrap_or(0.0);
-    let wheel_speed_dps = if let Some(measurement) = hall_measurement {
-        control_state.observe_wheel(measurement.angle_deg)
-    } else {
-        control_state.reset_wheel_observer();
-        0.0
-    };
+    let output = controller.step(ControllerInput {
+        hall_angle_deg: hall_measurement.map(|measurement| measurement.angle_deg),
+        theta_deg: estimate_measurement.map(|measurement| measurement.theta_deg),
+        theta_dot_dps: estimate_measurement.map(|measurement| measurement.theta_dot_dps),
+        max_phase_current_a: max_phase_current_amps(current_sample),
+        actuator_ready: actuator_calibration.is_some(),
+    });
 
-    if hall_measurement.is_none() {
-        control_state.reset_arming();
-        control_state.disable_motor(motor_drive);
-        control_state.electrical_angle_deg = 0.0;
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::WaitingForHall,
-            theta_error_deg: 0.0,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: 0.0,
-            torque_sign: 0.0,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: 0,
-            commutation_center_deg: 0.0,
-            motor_enabled: control_state.motor_enabled,
-        };
-    }
-
-    let hall_measurement = hall_measurement.expect("hall measurement checked above");
-    let actuator_calibration = if let Some(calibration) = actuator_calibration {
-        calibration
-    } else {
-        control_state.reset_arming();
-        control_state.disable_motor(motor_drive);
-        control_state.electrical_angle_deg = 0.0;
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::Startup,
-            theta_error_deg: 0.0,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: 0.0,
-            torque_sign: 0.0,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: 0,
-            commutation_center_deg: 0.0,
-            motor_enabled: control_state.motor_enabled,
-        };
-    };
-
-    let estimate_measurement = if let Some(measurement) = estimate_measurement {
-        measurement
-    } else {
-        control_state.reset_arming();
-        control_state.disable_motor(motor_drive);
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::WaitingForImu,
-            theta_error_deg: 0.0,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: actuator_calibration.direction_sign,
-            torque_sign: actuator_calibration.torque_sign,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: electrical_sector(control_state.electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(control_state.electrical_angle_deg),
-            motor_enabled: control_state.motor_enabled,
-        };
-    };
-
-    if !control_state.step_arming(
-        estimate_measurement.theta_deg,
-        estimate_measurement.theta_dot_dps,
-    ) {
-        control_state.disable_motor(motor_drive);
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::Arming,
-            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: actuator_calibration.direction_sign,
-            torque_sign: actuator_calibration.torque_sign,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: electrical_sector(control_state.electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(control_state.electrical_angle_deg),
-            motor_enabled: control_state.motor_enabled,
-        };
-    }
-
-    if estimate_measurement.theta_deg.abs() > CAPTURE_ANGLE_DEG {
-        control_state.disable_motor(motor_drive);
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::CaptureOutOfRange,
-            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: actuator_calibration.direction_sign,
-            torque_sign: actuator_calibration.torque_sign,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: electrical_sector(control_state.electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(control_state.electrical_angle_deg),
-            motor_enabled: control_state.motor_enabled,
-        };
-    }
-
-    if max_phase_current_amps(current_sample) > MAX_PHASE_CURRENT_A {
-        control_state.disable_motor(motor_drive);
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::CurrentLimited,
-            theta_error_deg: estimate_measurement.theta_deg - THETA_TARGET_DEG,
-            torque_command_nm: 0.0,
-            raw_drive_command: 0.0,
-            drive_command: 0.0,
-            direction_sign: actuator_calibration.direction_sign,
-            torque_sign: actuator_calibration.torque_sign,
-            electrical_angle_deg: control_state.electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: electrical_sector(control_state.electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(control_state.electrical_angle_deg),
-            motor_enabled: control_state.motor_enabled,
-        };
-    }
-
-    let torque_command_nm = pd_torque_command_nm(
-        estimate_measurement.theta_deg,
-        estimate_measurement.theta_dot_dps,
-    );
-    let theta_error_deg = estimate_measurement.theta_deg - THETA_TARGET_DEG;
-    let raw_drive_command = clamp(torque_command_nm / MAX_COMMAND_TORQUE_NM, -1.0, 1.0);
-    let drive_target = if raw_drive_command.abs() < DRIVE_DEADBAND {
-        0.0
-    } else {
-        raw_drive_command
-    };
-    let drive_command = control_state.slew_drive_command(drive_target);
-
-    if drive_command.abs() < DRIVE_IDLE_EPSILON {
+    if matches!(output.mode, PendulumControlMode::WaitingForHall | PendulumControlMode::Startup) {
+        drive_state.disable_motor(motor_drive);
+        drive_state.electrical_angle_deg = 0.0;
+    } else if !matches!(output.mode, PendulumControlMode::Idle | PendulumControlMode::Active) {
+        drive_state.disable_motor(motor_drive);
+    } else if let (Some(hall_measurement), Some(actuator_calibration)) =
+        (hall_measurement, actuator_calibration)
+    {
         let electrical_angle_deg =
             actuator_calibration.electrical_angle_deg(hall_measurement.angle_deg);
-        let (ua_v, ub_v, uc_v) = simplefoc_sine_pwm_phase_voltages(
-            0.0,
-            degrees_to_radians(electrical_angle_deg),
-            VOLTAGE_LIMIT_V,
-        );
-        motor_drive.enable();
-        motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
-        control_state.electrical_angle_deg = electrical_angle_deg;
-        control_state.uq_v = 0.0;
-        control_state.motor_enabled = true;
-        return PendulumControlTelemetry {
-            mode: PendulumControlMode::Idle,
-            theta_error_deg,
-            torque_command_nm,
-            raw_drive_command,
-            drive_command,
-            direction_sign: actuator_calibration.direction_sign,
-            torque_sign: actuator_calibration.torque_sign,
-            electrical_angle_deg,
-            uq_v: control_state.uq_v,
-            wheel_angle_deg,
-            wheel_speed_dps,
-            commutation_step: electrical_sector(electrical_angle_deg),
-            commutation_center_deg: sector_center_deg(electrical_angle_deg),
-            motor_enabled: control_state.motor_enabled,
-        };
+
+        if matches!(output.mode, PendulumControlMode::Idle) {
+            let (ua_v, ub_v, uc_v) = simplefoc_sine_pwm_phase_voltages(
+                0.0,
+                degrees_to_radians(electrical_angle_deg),
+                VOLTAGE_LIMIT_V,
+            );
+            motor_drive.enable();
+            motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
+            drive_state.electrical_angle_deg = electrical_angle_deg;
+            drive_state.uq_v = 0.0;
+            drive_state.motor_enabled = true;
+        } else {
+            let uq_v = -VOLTAGE_LIMIT_V * output.drive_command * actuator_calibration.torque_sign;
+            let (ua_v, ub_v, uc_v) = simplefoc_sine_pwm_phase_voltages(
+                uq_v,
+                degrees_to_radians(electrical_angle_deg),
+                VOLTAGE_LIMIT_V,
+            );
+            motor_drive.enable();
+            motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
+            drive_state.electrical_angle_deg = electrical_angle_deg;
+            drive_state.uq_v = uq_v;
+            drive_state.motor_enabled = true;
+        }
+    } else {
+        drive_state.disable_motor(motor_drive);
     }
 
-    let electrical_angle_deg = actuator_calibration.electrical_angle_deg(hall_measurement.angle_deg);
-    let uq_v = -VOLTAGE_LIMIT_V * drive_command * actuator_calibration.torque_sign;
-    let (ua_v, ub_v, uc_v) = simplefoc_sine_pwm_phase_voltages(
-        uq_v,
-        degrees_to_radians(electrical_angle_deg),
-        VOLTAGE_LIMIT_V,
-    );
-    motor_drive.enable();
-    motor_drive.set_phase_voltages(ua_v, ub_v, uc_v);
-    control_state.electrical_angle_deg = electrical_angle_deg;
-    control_state.uq_v = uq_v;
-    control_state.motor_enabled = true;
+    let (direction_sign, torque_sign) = if let Some(actuator_calibration) = actuator_calibration {
+        (
+            actuator_calibration.direction_sign,
+            actuator_calibration.torque_sign,
+        )
+    } else {
+        (0.0, 0.0)
+    };
 
     PendulumControlTelemetry {
-        mode: PendulumControlMode::Active,
-        theta_error_deg,
-        torque_command_nm,
-        raw_drive_command,
-        drive_command,
-        direction_sign: actuator_calibration.direction_sign,
-        torque_sign: actuator_calibration.torque_sign,
-        electrical_angle_deg,
-        uq_v,
-        wheel_angle_deg,
-        wheel_speed_dps,
-        commutation_step: electrical_sector(electrical_angle_deg),
-        commutation_center_deg: sector_center_deg(electrical_angle_deg),
-        motor_enabled: control_state.motor_enabled,
+        mode: output.mode,
+        theta_error_deg: output.theta_error_deg,
+        torque_command_nm: output.torque_command_nm,
+        raw_drive_command: output.raw_drive_command,
+        drive_command: output.drive_command,
+        direction_sign,
+        torque_sign,
+        electrical_angle_deg: drive_state.electrical_angle_deg,
+        uq_v: drive_state.uq_v,
+        wheel_angle_deg: output.wheel_angle_deg,
+        wheel_speed_dps: output.wheel_speed_dps,
+        commutation_step: electrical_sector(drive_state.electrical_angle_deg),
+        commutation_center_deg: sector_center_deg(drive_state.electrical_angle_deg),
+        motor_enabled: drive_state.motor_enabled,
     }
 }
 
@@ -1401,13 +1167,6 @@ fn max_phase_current_amps(sample: &CurrentSample) -> f32 {
     let ina_w = sample.ina_w.amps.abs();
     let uv = if ina_u > ina_v { ina_u } else { ina_v };
     if uv > ina_w { uv } else { ina_w }
-}
-
-fn pd_torque_command_nm(theta_deg: f32, theta_dot_dps: f32) -> f32 {
-    let theta_error_deg = theta_deg - THETA_TARGET_DEG;
-    let theta_rad = theta_error_deg * (core::f32::consts::PI / 180.0);
-    let theta_dot_rad_s = theta_dot_dps * (core::f32::consts::PI / 180.0);
-    KP_NM_PER_RAD * theta_rad + KD_NM_PER_RAD_S * theta_dot_rad_s
 }
 
 fn clamp(value: f32, min: f32, max: f32) -> f32 {

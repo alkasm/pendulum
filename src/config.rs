@@ -2,6 +2,7 @@ use crate::pendulum::{
     BodyAxis3, ImuAxesInBody, ImuMount, MotorMount, Pendulum, PendulumGeometry,
     PendulumHardware, Point2, Point3, RightTriangularBody,
 };
+use crate::controller::ControllerConfig;
 use uom::si::{
     angular_velocity::radian_per_second,
     f64::{AngularVelocity, Length, Mass, MomentOfInertia, Time, Torque},
@@ -105,5 +106,15 @@ impl Default for RuntimeConfig {
             motor_torque_constant_nm_per_a: 0.039,
             wheel_inertia: default_flywheel_inertia(),
         }
+    }
+}
+
+impl RuntimeConfig {
+    pub fn controller_config(&self) -> ControllerConfig {
+        ControllerConfig::basic_pd(
+            self.controller_kp as f32,
+            self.controller_kd as f32,
+            self.dt.get::<second>() as f32,
+        )
     }
 }

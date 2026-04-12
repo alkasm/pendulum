@@ -4,11 +4,12 @@ use bevy_ecs::prelude::*;
 
 use pendulum_lib::{
     config::RuntimeConfig,
+    controller::PendulumController,
     imu::Imu,
     motor::Motor,
     runtime::core::{
         ControlClock, ControllerResource, ImuReading, MotorState, StepRuntime, TelemetryPublisher,
-        WheelAngleEstimate, advance_clock_system, pd_control_system, publish_telemetry_system,
+        WheelAngleEstimate, advance_clock_system, control_system, publish_telemetry_system,
         run_loop,
     },
     telemetry::TelemetrySender,
@@ -54,10 +55,9 @@ impl HardwareRuntime {
 
         let mut world = World::new();
         world.insert_resource(ControlClock::new(config.dt));
-        world.insert_resource(ControllerResource::new(
-            config.controller_kp,
-            config.controller_kd,
-        ));
+        world.insert_resource(ControllerResource::new(PendulumController::new(
+            config.controller_config(),
+        )));
         world.insert_resource(ImuReading::default());
         world.insert_resource(MotorState::default());
         world.insert_resource(WheelAngleEstimate::default());
@@ -73,7 +73,7 @@ impl HardwareRuntime {
         schedule.add_systems(
             (
                 hw_sample_imu_system,
-                pd_control_system,
+                control_system,
                 hw_command_motor_system,
                 integrate_wheel_angle_system,
                 advance_clock_system,

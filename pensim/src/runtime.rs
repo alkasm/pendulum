@@ -3,11 +3,12 @@ use std::{thread, time::Duration};
 use bevy_ecs::prelude::*;
 
 use pendulum_lib::{
+    controller::PendulumController,
     imu::Imu,
     motor::Motor,
     runtime::core::{
         ControlClock, ControllerResource, ImuReading, MotorState, StepRuntime, TelemetryPublisher,
-        WheelAngleEstimate, advance_clock_system, pd_control_system, publish_telemetry_system,
+        WheelAngleEstimate, advance_clock_system, control_system, publish_telemetry_system,
         run_loop,
     },
     telemetry::TelemetrySender,
@@ -48,10 +49,9 @@ impl SimulationRuntime {
 
         let mut world = World::new();
         world.insert_resource(ControlClock::new(runtime.dt));
-        world.insert_resource(ControllerResource::new(
-            runtime.controller_kp,
-            runtime.controller_kd,
-        ));
+        world.insert_resource(ControllerResource::new(PendulumController::new(
+            runtime.controller_config(),
+        )));
         world.insert_resource(ImuReading { sample: imu_sample });
         world.insert_resource(MotorState::default());
         world.insert_resource(WheelAngleEstimate {
@@ -72,7 +72,7 @@ impl SimulationRuntime {
         schedule.add_systems(
             (
                 sim_sample_imu_system,
-                pd_control_system,
+                control_system,
                 sim_command_motor_system,
                 sim_step_plant_system,
                 advance_clock_system,
