@@ -122,9 +122,10 @@
               pkgs.espflash
               pkgs.just
               pkgs.ldproxy
+              pkgs.pkg-config
               toolchains.xtensa-gcc
               toolchains.xtensa-rust
-            ];
+            ] ++ lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 
             shellHook = ''
               export PS1="\[\e[36m\]❄ pendulum\[\e[0m\] $PS1"
