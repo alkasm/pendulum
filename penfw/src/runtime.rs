@@ -54,15 +54,17 @@ pub struct FirmwareBoot {
     pub geometry: PendulumGeometry,
 }
 
-pub fn load_boot_snapshot(settings: &mut SettingsStorage) -> FirmwareBoot {
-    FirmwareBoot {
+pub fn load_boot_snapshot(mut settings: SettingsStorage) -> (SettingsStorage, FirmwareBoot) {
+    let boot = FirmwareBoot {
         config_record: settings.load_device_config().unwrap_or(RecordLoad::Corrupt),
         calibration_record: settings
             .load_motor_calibration_record()
             .unwrap_or(RecordLoad::Corrupt),
         runtime_config: RuntimeConfig::default(),
         geometry: default_pendulum().geometry,
-    }
+    };
+
+    (settings, boot)
 }
 
 #[derive(Resource)]
@@ -89,15 +91,23 @@ impl<'d> FirmwarePlatform<'d> {
         delay: esp_hal::delay::Delay,
         settings: SettingsStorage,
         wifi_validator: WifiValidator<'d>,
-        mut current_sensor: CurrentSensor<'d>,
-        mut motor_drive: PwmMotorDrive<'d>,
+        current_sensor: CurrentSensor<'d>,
+        motor_drive: PwmMotorDrive<'d>,
         i2c: I2c<'d, Blocking>,
         geometry: PendulumGeometry,
         control_dt_s: f32,
     ) -> Self {
-        let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
-        motor_drive.disable();
-        motor_drive.coast();
+        let current_sensor = {
+            let mut current_sensor = current_sensor;
+            let _ = current_sensor.calibrate_baseline(BASELINE_SAMPLES);
+            current_sensor
+        };
+        let motor_drive = {
+            let mut motor_drive = motor_drive;
+            motor_drive.disable();
+            motor_drive.coast();
+            motor_drive
+        };
 
         Self {
             serial,

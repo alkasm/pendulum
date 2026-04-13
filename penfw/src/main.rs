@@ -54,8 +54,7 @@ fn main() -> ! {
         peripherals.GPIO39,
     );
 
-    let mut settings = SettingsStorage::new();
-    let boot = load_boot_snapshot(&mut settings);
+    let (settings, boot) = load_boot_snapshot(SettingsStorage::new());
 
     let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_mhz(160))
         .expect("failed to configure MCPWM clock");
@@ -111,6 +110,5 @@ fn main() -> ! {
         boot.geometry,
         boot.runtime_config.dt.get::<uom::si::time::second>() as f32,
     );
-    let mut runtime = FirmwareRuntime::new(platform, boot);
-    runtime.run()
+    FirmwareRuntime::new(platform, boot).run()
 }

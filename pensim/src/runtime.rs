@@ -145,9 +145,12 @@ impl SimulationRuntime {
         let runtime = config.runtime;
         let plant = SimPlant::new(config.plant_params(), config.initial_state());
         let initial_state = plant.state();
-        let mut imu = SimImu::new();
-        imu.sample_from_state(initial_state);
-        let imu_sample = imu.read().expect("sim IMU should never fail");
+        let (imu, imu_sample) = {
+            let mut imu = SimImu::new();
+            imu.sample_from_state(initial_state);
+            let imu_sample = imu.read().expect("sim IMU should never fail");
+            (imu, imu_sample)
+        };
         let services = SimServices::new();
 
         let (command_tx, command_rx) = mpsc::channel();
