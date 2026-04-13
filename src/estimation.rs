@@ -4,6 +4,8 @@ use uom::si::{
     angle::degree,
     angular_velocity::degree_per_second,
     f32::{Acceleration, Angle, AngularVelocity},
+    f64::Time,
+    time::second,
 };
 
 use crate::{
@@ -50,13 +52,13 @@ pub struct PendulumImuEstimator {
 }
 
 impl PendulumImuEstimator {
-    pub fn new(dt_s: f32) -> Self {
-        Self::with_alpha(dt_s, COMPLEMENTARY_FILTER_ALPHA)
+    pub fn new(dt: Time) -> Self {
+        Self::with_alpha(dt, COMPLEMENTARY_FILTER_ALPHA)
     }
 
-    pub fn with_alpha(dt_s: f32, alpha: f32) -> Self {
+    pub fn with_alpha(dt: Time, alpha: f32) -> Self {
         Self {
-            dt_s,
+            dt_s: dt.get::<second>() as f32,
             alpha,
             filtered_theta: None,
         }
@@ -186,7 +188,7 @@ mod tests {
 
     #[test]
     fn estimator_produces_finite_output_for_resting_sample() {
-        let mut estimator = PendulumImuEstimator::new(0.005);
+        let mut estimator = PendulumImuEstimator::new(Time::new::<second>(0.005));
         let geometry = default_pendulum().geometry;
         let estimate = estimator.step(
             &geometry,

@@ -108,7 +108,7 @@ fn main() -> ! {
         motor_drive,
         i2c,
         config.geometry,
-        config.runtime_config.dt.get::<uom::si::time::second>() as f32,
+        config.runtime_config.dt,
     );
     FirmwareRuntime::new(platform, config).run()
 }

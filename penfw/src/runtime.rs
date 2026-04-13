@@ -26,7 +26,7 @@ use uom::si::{
     angle::degree,
     angular_velocity::degree_per_second,
     electric_current::ampere,
-    f64::{Angle, AngularVelocity},
+    f64::{Angle, AngularVelocity, Time},
     time::second,
 };
 
@@ -95,7 +95,7 @@ impl<'d> FirmwarePlatform<'d> {
         motor_drive: PwmMotorDrive<'d>,
         i2c: I2c<'d, Blocking>,
         geometry: PendulumGeometry,
-        control_dt_s: f32,
+        control_dt: Time,
     ) -> Self {
         let current_sensor = {
             let mut current_sensor = current_sensor;
@@ -120,7 +120,7 @@ impl<'d> FirmwarePlatform<'d> {
             i2c,
             hall_sensor: HallSensor::new(),
             imu_sensor: Gy521Session::new(),
-            imu_estimator: PendulumImuEstimator::new(control_dt_s),
+            imu_estimator: PendulumImuEstimator::new(control_dt),
             motor_drive_state: MotorDriveState::new(),
             geometry,
         }
