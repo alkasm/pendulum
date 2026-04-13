@@ -16,7 +16,7 @@ The runtime is split into four layers.
 
 ## Entrypoints
 
-Firmware starts in `penfw/src/main.rs`. Its job is only board bring-up: initialize peripherals, load the firmware config, create the platform adapter, and hand control to `FirmwareRuntime`.
+Firmware starts in `penfw/src/main.rs`. Its job is only board bring-up: initialize peripherals, load the firmware config, create the hardware resource, and hand control to `FirmwareRuntime`.
 
 Simulation starts in `pensim/src/main.rs`. Its job is only process setup: create the telemetry stream, spawn the command server, and hand control to `SimulationRuntime`.
 
@@ -60,7 +60,7 @@ The fixed-step control path is:
 
 Firmware-specific ECS systems live in `penfw/src/runtime.rs`.
 
-They own serial polling, flash-backed effects, sensor sampling, and PWM output application. Hardware details stay in firmware modules such as `settings`, `hall`, `imu`, and `motor_drive`.
+They are split around a literal `Hardware` resource plus private service and runtime-state resources. Serial, current sensing, PWM drive, and the shared I2C bus live in `Hardware`, while flash-backed effects, Wi-Fi validation, command framing state, and estimator/session state are kept out of the hardware bucket. Hardware details stay in firmware modules such as `settings`, `hall`, `imu`, and `motor_drive`.
 
 Simulation-specific ECS systems live in `pensim/src/runtime.rs`.
 

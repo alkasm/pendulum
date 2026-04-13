@@ -68,34 +68,19 @@ pub fn load_firmware_config(mut settings: SettingsStorage) -> (SettingsStorage, 
 }
 
 #[derive(Resource)]
-pub struct FirmwarePlatform<'d> {
+pub struct Hardware<'d> {
     serial: Uart<'d, Blocking>,
-    delay: esp_hal::delay::Delay,
-    settings: SettingsStorage,
-    command_port: CommandPort,
-    wifi_validator: WifiValidator<'d>,
     current_sensor: CurrentSensor<'d>,
     motor_drive: PwmMotorDrive<'d>,
     i2c: I2c<'d, Blocking>,
-    hall_sensor: HallSensor,
-    imu_sensor: Gy521Session,
-    imu_estimator: PendulumImuEstimator,
-    motor_drive_state: MotorDriveState,
-    geometry: PendulumGeometry,
 }
 
-impl<'d> FirmwarePlatform<'d> {
-    #[allow(clippy::too_many_arguments)]
+impl<'d> Hardware<'d> {
     pub fn new(
         serial: Uart<'d, Blocking>,
-        delay: esp_hal::delay::Delay,
-        settings: SettingsStorage,
-        wifi_validator: WifiValidator<'d>,
         current_sensor: CurrentSensor<'d>,
         motor_drive: PwmMotorDrive<'d>,
         i2c: I2c<'d, Blocking>,
-        geometry: PendulumGeometry,
-        control_dt: Time,
     ) -> Self {
         let current_sensor = {
             let mut current_sensor = current_sensor;
@@ -111,13 +96,34 @@ impl<'d> FirmwarePlatform<'d> {
 
         Self {
             serial,
-            delay,
-            settings,
-            command_port: CommandPort::new(),
-            wifi_validator,
             current_sensor,
             motor_drive,
             i2c,
+        }
+    }
+}
+
+#[derive(Resource)]
+struct Services<'d> {
+    delay: esp_hal::delay::Delay,
+    settings: SettingsStorage,
+    wifi_validator: WifiValidator<'d>,
+}
+
+#[derive(Resource)]
+struct RuntimeState {
+    command_port: CommandPort,
+    hall_sensor: HallSensor,
+    imu_sensor: Gy521Session,
+    imu_estimator: PendulumImuEstimator,
+    motor_drive_state: MotorDriveState,
+    geometry: PendulumGeometry,
+}
+
+impl RuntimeState {
+    fn new(geometry: PendulumGeometry, control_dt: Time) -> Self {
+        Self {
+            command_port: CommandPort::new(),
             hall_sensor: HallSensor::new(),
             imu_sensor: Gy521Session::new(),
             imu_estimator: PendulumImuEstimator::new(control_dt),
@@ -126,8 +132,8 @@ impl<'d> FirmwarePlatform<'d> {
         }
     }
 
-    fn disable_outputs(&mut self) {
-        self.motor_drive_state.disable_motor(&mut self.motor_drive);
+    fn disable_outputs<D: pendulum_lib::runtime::ControlDrive>(&mut self, motor_drive: &mut D) {
+        self.motor_drive_state.disable_motor(motor_drive);
     }
 }
 
@@ -141,7 +147,13 @@ pub struct FirmwareRuntime<'d> {
 }
 
 impl<'d> FirmwareRuntime<'d> {
-    pub fn new(platform: FirmwarePlatform<'d>, config: FirmwareConfig) -> Self {
+    pub fn new(
+        hardware: Hardware<'d>,
+        settings: SettingsStorage,
+        delay: esp_hal::delay::Delay,
+        wifi_validator: WifiValidator<'d>,
+        config: FirmwareConfig,
+    ) -> Self {
         let mut world = World::new();
         initialize_runtime_world(
             &mut world,
@@ -151,7 +163,13 @@ impl<'d> FirmwareRuntime<'d> {
             &config.config_record,
             &config.calibration_record,
         );
-        world.insert_resource(platform);
+        world.insert_resource(hardware);
+        world.insert_resource(Services {
+            delay,
+            settings,
+            wifi_validator,
+        });
+        world.insert_resource(RuntimeState::new(config.geometry, config.runtime_config.dt));
         world.insert_resource(CommandScheduleActivity::default());
 
         let mut command_schedule = Schedule::default();
@@ -221,7 +239,7 @@ impl<'d> FirmwareRuntime<'d> {
     }
 }
 
-struct FirmwareServices<'a, 'd> {
+struct EffectServices<'a, 'd> {
     settings: &'a mut SettingsStorage,
     wifi_validator: &'a mut WifiValidator<'d>,
     delay: &'a esp_hal::delay::Delay,
@@ -230,7 +248,7 @@ struct FirmwareServices<'a, 'd> {
     motor_drive: &'a mut PwmMotorDrive<'d>,
 }
 
-impl<'a, 'd> DeviceServices for FirmwareServices<'a, 'd> {
+impl<'a, 'd> DeviceServices for EffectServices<'a, 'd> {
     type Error = SettingsError;
 
     fn device_info(&self) -> DeviceInfo {
@@ -312,7 +330,8 @@ fn reset_command_activity_system(mut activity: ResMut<'_, CommandScheduleActivit
 }
 
 fn poll_command_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     mut request: ResMut<'_, PendingDeviceRequest>,
     mut activity: ResMut<'_, CommandScheduleActivity>,
 ) {
@@ -320,7 +339,7 @@ fn poll_command_system(
         return;
     }
 
-    let Some(next_request) = platform.command_port.poll(&mut platform.serial) else {
+    let Some(next_request) = runtime_state.command_port.poll(&mut hardware.serial) else {
         return;
     };
 
@@ -329,7 +348,9 @@ fn poll_command_system(
 }
 
 fn firmware_execute_effects_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut services: ResMut<'_, Services<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     plan: Res<'_, PendingDevicePlan>,
     mut action_result: ResMut<'_, PendingDeviceActionResult>,
 ) {
@@ -341,22 +362,23 @@ fn firmware_execute_effects_system(
         return;
     };
 
-    let mut services = FirmwareServices {
-        settings: &mut platform.settings,
-        wifi_validator: &mut platform.wifi_validator,
-        delay: &platform.delay,
-        i2c: &mut platform.i2c,
-        hall_sensor: &mut platform.hall_sensor,
-        motor_drive: &mut platform.motor_drive,
+    let mut effect_services = EffectServices {
+        settings: &mut services.settings,
+        wifi_validator: &mut services.wifi_validator,
+        delay: &services.delay,
+        i2c: &mut hardware.i2c,
+        hall_sensor: &mut runtime_state.hall_sensor,
+        motor_drive: &mut hardware.motor_drive,
     };
     action_result.0 = Some(execute_device_action(
         pending_plan.action.clone(),
-        &mut services,
+        &mut effect_services,
     ));
 }
 
 fn write_response_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     mut response: ResMut<'_, PendingDeviceResponse>,
     mut reboot: ResMut<'_, PendingReboot>,
 ) {
@@ -364,21 +386,21 @@ fn write_response_system(
         return;
     };
 
-    write_response(&mut platform.serial, &reply.response);
+    write_response(&mut hardware.serial, &reply.response);
     let should_reboot = reboot.0;
     reboot.0 = false;
     if should_reboot {
-        platform.disable_outputs();
+        runtime_state.disable_outputs(&mut hardware.motor_drive);
         esp_hal::system::software_reset()
     }
 }
 
 fn sample_current_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
     mut inputs: ResMut<'_, ControlInputs>,
     mut motor_telemetry: ResMut<'_, MotorTelemetryResource>,
 ) {
-    let current_sample = platform.current_sensor.read();
+    let current_sample = hardware.current_sensor.read();
     let phase_current = uom::si::f64::ElectricCurrent::new::<ampere>(max_phase_current_amps(
         current_sample.ina_u.amps,
         current_sample.ina_v.amps,
@@ -390,10 +412,11 @@ fn sample_current_system(
 }
 
 fn sample_hall_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     mut inputs: ResMut<'_, ControlInputs>,
 ) {
-    let hall = read_hall_telemetry(&mut platform.i2c, &mut platform.hall_sensor);
+    let hall = read_hall_telemetry(&mut hardware.i2c, &mut runtime_state.hall_sensor);
     inputs.wheel_angle = match hall {
         pendulum_lib::HallTelemetry::Measurement(measurement) => {
             Some(Angle::new::<degree>(measurement.angle_deg as f64))
@@ -403,14 +426,15 @@ fn sample_hall_system(
 }
 
 fn sample_imu_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     mut inputs: ResMut<'_, ControlInputs>,
 ) {
     let estimate = read_pendulum_estimate(
-        &mut platform.i2c,
-        &mut platform.imu_sensor,
-        &mut platform.imu_estimator,
-        &platform.geometry,
+        &mut hardware.i2c,
+        &mut runtime_state.imu_sensor,
+        &mut runtime_state.imu_estimator,
+        &runtime_state.geometry,
     );
 
     inputs.imu = match estimate {
@@ -423,20 +447,21 @@ fn sample_imu_system(
 }
 
 fn apply_motor_output_system(
-    mut platform: ResMut<'_, FirmwarePlatform<'_>>,
+    mut hardware: ResMut<'_, Hardware<'_>>,
+    mut runtime_state: ResMut<'_, RuntimeState>,
     device: Res<'_, DeviceModelResource>,
     inputs: Res<'_, ControlInputs>,
     outputs: Res<'_, ControlOutputs>,
 ) {
     let Some(output) = outputs.controller_output else {
-        platform.disable_outputs();
+        runtime_state.disable_outputs(&mut hardware.motor_drive);
         return;
     };
 
     let hall_angle = inputs.wheel_angle.map(|angle| angle.get::<degree>() as f32);
     let calibration = device.0.calibration.map(HallElectricalCalibration::from);
-    platform.motor_drive_state.apply_output(
-        &mut platform.motor_drive,
+    runtime_state.motor_drive_state.apply_output(
+        &mut hardware.motor_drive,
         &output,
         hall_angle,
         calibration,
