@@ -47,15 +47,15 @@ use crate::{
 
 const BASELINE_SAMPLES: u32 = 64;
 
-pub struct FirmwareBoot {
+pub struct FirmwareConfig {
     pub config_record: RecordLoad<StoredDeviceConfig>,
     pub calibration_record: RecordLoad<StoredMotorCalibration>,
     pub runtime_config: RuntimeConfig,
     pub geometry: PendulumGeometry,
 }
 
-pub fn load_boot_snapshot(mut settings: SettingsStorage) -> (SettingsStorage, FirmwareBoot) {
-    let boot = FirmwareBoot {
+pub fn load_firmware_config(mut settings: SettingsStorage) -> (SettingsStorage, FirmwareConfig) {
+    let config = FirmwareConfig {
         config_record: settings.load_device_config().unwrap_or(RecordLoad::Corrupt),
         calibration_record: settings
             .load_motor_calibration_record()
@@ -64,7 +64,7 @@ pub fn load_boot_snapshot(mut settings: SettingsStorage) -> (SettingsStorage, Fi
         geometry: default_pendulum().geometry,
     };
 
-    (settings, boot)
+    (settings, config)
 }
 
 #[derive(Resource)]
@@ -141,15 +141,15 @@ pub struct FirmwareRuntime<'d> {
 }
 
 impl<'d> FirmwareRuntime<'d> {
-    pub fn new(platform: FirmwarePlatform<'d>, boot: FirmwareBoot) -> Self {
+    pub fn new(platform: FirmwarePlatform<'d>, config: FirmwareConfig) -> Self {
         let mut world = World::new();
         initialize_runtime_world(
             &mut world,
             firmware_device_info(),
-            boot.runtime_config.controller_config(),
-            boot.runtime_config.dt,
-            &boot.config_record,
-            &boot.calibration_record,
+            config.runtime_config.controller_config(),
+            config.runtime_config.dt,
+            &config.config_record,
+            &config.calibration_record,
         );
         world.insert_resource(platform);
         world.insert_resource(CommandScheduleActivity::default());
@@ -185,7 +185,7 @@ impl<'d> FirmwareRuntime<'d> {
             command_schedule,
             control_schedule,
             control_period: Duration::from_micros(
-                (boot.runtime_config.dt.get::<second>() * 1_000_000.0) as u64,
+                (config.runtime_config.dt.get::<second>() * 1_000_000.0) as u64,
             ),
             last_loop_start: None,
             _marker: core::marker::PhantomData,

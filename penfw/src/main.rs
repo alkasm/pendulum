@@ -28,7 +28,7 @@ use esp_hal::{
 };
 use hw::CurrentSensor;
 use motor_drive::{PWM_PERIOD_TICKS, PwmMotorDrive, low_side_pwm_config};
-use runtime::{FirmwarePlatform, FirmwareRuntime, load_boot_snapshot};
+use runtime::{FirmwarePlatform, FirmwareRuntime, load_firmware_config};
 use settings::SettingsStorage;
 use wifi::WifiValidator;
 
@@ -54,7 +54,7 @@ fn main() -> ! {
         peripherals.GPIO39,
     );
 
-    let (settings, boot) = load_boot_snapshot(SettingsStorage::new());
+    let (settings, config) = load_firmware_config(SettingsStorage::new());
 
     let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_mhz(160))
         .expect("failed to configure MCPWM clock");
@@ -107,8 +107,8 @@ fn main() -> ! {
         current_sensor,
         motor_drive,
         i2c,
-        boot.geometry,
-        boot.runtime_config.dt.get::<uom::si::time::second>() as f32,
+        config.geometry,
+        config.runtime_config.dt.get::<uom::si::time::second>() as f32,
     );
-    FirmwareRuntime::new(platform, boot).run()
+    FirmwareRuntime::new(platform, config).run()
 }

@@ -16,7 +16,7 @@ The runtime is split into four layers.
 
 ## Entrypoints
 
-Firmware starts in `penfw/src/main.rs`. Its job is only board bring-up: initialize peripherals, load the boot snapshot, create the platform adapter, and hand control to `FirmwareRuntime`.
+Firmware starts in `penfw/src/main.rs`. Its job is only board bring-up: initialize peripherals, load the firmware config, create the platform adapter, and hand control to `FirmwareRuntime`.
 
 Simulation starts in `pensim/src/main.rs`. Its job is only process setup: create the telemetry stream, spawn the command server, and hand control to `SimulationRuntime`.
 
