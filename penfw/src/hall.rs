@@ -15,10 +15,6 @@ impl HallSensor {
         Self { configured: false }
     }
 
-    pub fn reset(&mut self) {
-        self.configured = false;
-    }
-
     pub fn read_telemetry(&mut self, i2c: &mut I2c<'_, Blocking>) -> HallTelemetry {
         if !i2c_device_present(i2c, HALL_SENSOR_ADDR) {
             self.configured = false;

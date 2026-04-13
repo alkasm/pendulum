@@ -9,20 +9,20 @@ use std::{
 use bevy_ecs::prelude::*;
 
 use pendulum_lib::{
-    DeviceInfo, DeviceMode, DeviceRequest, DeviceResponse, DeviceState, DeviceStatus, FirmwareName,
-    FirmwareVersion, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials, WifiProbeResult,
-    WifiStatus,
-    controller::PendulumController,
+    DeviceInfo, DeviceRequest, DeviceResponse, FirmwareName, FirmwareVersion, StoredDeviceConfig,
+    StoredMotorCalibration, WifiCredentials, WifiProbeResult, WifiStatus,
+    controller::ControllerConfig,
     imu::Imu,
     motor::Motor,
     runtime::{
-        DeviceReply, DeviceRuntime, DeviceServices, StepRuntime,
-        core::{
-            ControlClock, ControllerResource, ImuReading, MotorState, TelemetryPublisher,
-            WheelAngleEstimate, advance_clock_system, control_system, publish_telemetry_system,
-            run_loop,
-        },
+        ControlClock, ControlInputs, ControlOutputs, DeviceModelResource, DeviceServices,
+        MotorTelemetryResource, PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest,
+        PendingDeviceResponse, PendingReboot, StepRuntime, TelemetryPublisher,
+        advance_clock_system, boot_device_model, control_system, device_request_finalize_system,
+        device_request_system, execute_device_action, initialize_runtime_world,
+        publish_telemetry_system, run_loop,
     },
+    settings_record::RecordLoad,
     transport,
 };
 use uom::si::time::second;
@@ -51,6 +51,7 @@ struct SimCommand {
     response: Sender<DeviceResponse>,
 }
 
+#[derive(Resource)]
 struct SimServices {
     device_info: DeviceInfo,
     stored_config: StoredDeviceConfig,
@@ -126,11 +127,13 @@ impl DeviceServices for SimServices {
 
 pub struct SimulationRuntime {
     world: World,
-    schedule: Schedule,
+    device_plan_schedule: Schedule,
+    device_finalize_schedule: Schedule,
+    control_schedule: Schedule,
+    controller_config: ControllerConfig,
     step_dt: Duration,
-    device_runtime: DeviceRuntime,
-    services: SimServices,
     command_rx: Receiver<SimCommand>,
+    services: SimServices,
 }
 
 impl SimulationRuntime {
@@ -145,20 +148,31 @@ impl SimulationRuntime {
         let mut imu = SimImu::new();
         imu.sample_from_state(initial_state);
         let imu_sample = imu.read().expect("sim IMU should never fail");
+        let services = SimServices::new();
 
         let (command_tx, command_rx) = mpsc::channel();
         spawn_tcp_command_server(command_addr.into(), command_tx);
 
         let mut world = World::new();
-        world.insert_resource(ControlClock::new(runtime.dt));
-        world.insert_resource(ControllerResource::new(PendulumController::new(
+        initialize_runtime_world(
+            &mut world,
+            services.device_info(),
             runtime.controller_config(),
-        )));
-        world.insert_resource(ImuReading { sample: imu_sample });
-        world.insert_resource(MotorState::default());
-        world.insert_resource(WheelAngleEstimate {
-            angle: initial_state.wheel_angle,
-        });
+            runtime.dt,
+            &RecordLoad::Valid(services.stored_config.clone()),
+            &RecordLoad::Valid(
+                services
+                    .stored_calibration
+                    .expect("sim calibration should exist"),
+            ),
+        );
+        *world
+            .get_resource_mut::<ControlInputs>()
+            .expect("control inputs missing") = ControlInputs {
+            wheel_angle: Some(initial_state.wheel_angle),
+            imu: Some(imu_sample),
+            phase_current: Default::default(),
+        };
         world.insert_resource(TelemetryPublisher { sender: telemetry });
         world.insert_resource(SimPlantResource { plant });
         world.insert_resource(SimImuResource { imu });
@@ -169,9 +183,14 @@ impl SimulationRuntime {
                 runtime.motor_torque_constant_nm_per_a,
             ),
         });
+        let mut device_plan_schedule = Schedule::default();
+        device_plan_schedule.add_systems(device_request_system);
 
-        let mut schedule = Schedule::default();
-        schedule.add_systems(
+        let mut device_finalize_schedule = Schedule::default();
+        device_finalize_schedule.add_systems(device_request_finalize_system);
+
+        let mut control_schedule = Schedule::default();
+        control_schedule.add_systems(
             (
                 sim_sample_imu_system,
                 control_system,
@@ -183,27 +202,15 @@ impl SimulationRuntime {
                 .chain(),
         );
 
-        let device_status = DeviceStatus {
-            mode: DeviceMode::Manufacturing,
-            state: DeviceState::Service,
-            fault: None,
-            wifi: WifiStatus { ssid: None },
-            calibration: pendulum_lib::CalibrationStatus::Valid,
-            control_mode: None,
-        };
-        let device_runtime = DeviceRuntime::new(
-            StoredDeviceConfig::default(),
-            device_status,
-            PendulumController::new(Default::default()),
-        );
-
         Self {
             world,
-            schedule,
+            device_plan_schedule,
+            device_finalize_schedule,
+            control_schedule,
+            controller_config: runtime.controller_config(),
             step_dt: Duration::from_secs_f64(runtime.dt.get::<second>()),
-            device_runtime,
-            services: SimServices::new(),
             command_rx,
+            services,
         }
     }
 }
@@ -211,7 +218,7 @@ impl SimulationRuntime {
 impl StepRuntime for SimulationRuntime {
     fn step(&mut self) {
         self.drain_commands();
-        self.schedule.run(&mut self.world);
+        self.control_schedule.run(&mut self.world);
         self.drain_commands();
     }
 
@@ -225,10 +232,48 @@ impl SimulationRuntime {
         loop {
             match self.command_rx.try_recv() {
                 Ok(command) => {
-                    let DeviceReply { response, reboot } = self
-                        .device_runtime
-                        .handle_request(command.request, &mut self.services);
-                    let _ = command.response.send(response);
+                    {
+                        let mut request = self
+                            .world
+                            .get_resource_mut::<PendingDeviceRequest>()
+                            .expect("pending request resource missing");
+                        request.0 = Some(command.request);
+                    }
+                    self.device_plan_schedule.run(&mut self.world);
+                    if let Some(plan) = self
+                        .world
+                        .get_resource_mut::<PendingDevicePlan>()
+                        .expect("pending plan resource missing")
+                        .0
+                        .take()
+                    {
+                        let result = execute_device_action(plan.action, &mut self.services);
+                        {
+                            let mut action_result = self
+                                .world
+                                .get_resource_mut::<PendingDeviceActionResult>()
+                                .expect("pending action result resource missing");
+                            action_result.0 = Some(result);
+                        }
+                        self.device_finalize_schedule.run(&mut self.world);
+                    }
+                    let response = self
+                        .world
+                        .get_resource_mut::<PendingDeviceResponse>()
+                        .expect("pending response resource missing")
+                        .0
+                        .take()
+                        .expect("device request produced no response");
+                    let reboot = self
+                        .world
+                        .get_resource_mut::<PendingReboot>()
+                        .expect("pending reboot resource missing")
+                        .0;
+                    self.world
+                        .get_resource_mut::<PendingReboot>()
+                        .expect("pending reboot resource missing")
+                        .0 = false;
+                    let _ = command.response.send(response.response);
                     if reboot {
                         self.reset_device_runtime();
                     }
@@ -240,22 +285,19 @@ impl SimulationRuntime {
     }
 
     fn reset_device_runtime(&mut self) {
-        self.device_runtime = DeviceRuntime::new(
-            self.services.stored_config.clone(),
-            DeviceStatus {
-                mode: self.services.stored_config.mode.clone(),
-                state: DeviceState::Service,
-                fault: None,
-                wifi: self.services.stored_config.wifi_status(),
-                calibration: if self.services.stored_calibration.is_some() {
-                    pendulum_lib::CalibrationStatus::Valid
-                } else {
-                    pendulum_lib::CalibrationStatus::Missing
-                },
-                control_mode: None,
-            },
-            PendulumController::new(Default::default()),
-        );
+        let calibration_record = match self.services.stored_calibration {
+            Some(calibration) => RecordLoad::Valid(calibration),
+            None => RecordLoad::Missing,
+        };
+        let mut device = self
+            .world
+            .get_resource_mut::<DeviceModelResource>()
+            .expect("device model missing");
+        *device = DeviceModelResource(boot_device_model(
+            &RecordLoad::Valid(self.services.stored_config.clone()),
+            &calibration_record,
+            self.controller_config,
+        ));
     }
 }
 
@@ -328,33 +370,36 @@ fn serve_command_client(mut stream: TcpStream, command_tx: Sender<SimCommand>) {
 fn sim_sample_imu_system(
     plant: Res<'_, SimPlantResource>,
     mut imu_device: ResMut<'_, SimImuResource>,
-    mut imu: ResMut<'_, pendulum_lib::runtime::core::ImuReading>,
+    mut inputs: ResMut<'_, ControlInputs>,
 ) {
     imu_device.imu.sample_from_state(plant.plant.state());
-    imu.sample = imu_device.imu.read().expect("sim IMU should never fail");
+    let sample = imu_device.imu.read().expect("sim IMU should never fail");
+    inputs.imu = Some(sample);
+    inputs.wheel_angle = Some(plant.plant.state().wheel_angle);
 }
 
 fn sim_command_motor_system(
     plant: Res<'_, SimPlantResource>,
     mut motor_device: ResMut<'_, SimMotorResource>,
-    mut motor_state: ResMut<'_, pendulum_lib::runtime::core::MotorState>,
+    mut control_outputs: ResMut<'_, ControlOutputs>,
+    mut motor_telemetry: ResMut<'_, MotorTelemetryResource>,
 ) {
-    motor_state.command.observed_wheel_speed = plant.plant.state().wheel_speed;
-    motor_state.telemetry = motor_device
+    control_outputs.motor_command.observed_wheel_speed = plant.plant.state().wheel_speed;
+    motor_telemetry.0 = motor_device
         .motor
-        .command(motor_state.command)
+        .command(control_outputs.motor_command)
         .expect("sim motor should never fail");
 }
 
 fn sim_step_plant_system(
-    clock: Res<'_, pendulum_lib::runtime::core::ControlClock>,
+    clock: Res<'_, ControlClock>,
     mut plant_resource: ResMut<'_, SimPlantResource>,
-    motor_state: Res<'_, pendulum_lib::runtime::core::MotorState>,
-    mut wheel_angle: ResMut<'_, pendulum_lib::runtime::core::WheelAngleEstimate>,
+    motor_telemetry: Res<'_, MotorTelemetryResource>,
+    mut inputs: ResMut<'_, ControlInputs>,
 ) {
     plant_resource.plant.step(
-        motor_state.telemetry.applied_torque,
+        motor_telemetry.0.applied_torque,
         Duration::from_secs_f64(clock.dt.get::<second>()),
     );
-    wheel_angle.angle = plant_resource.plant.state().wheel_angle;
+    inputs.wheel_angle = Some(plant_resource.plant.state().wheel_angle);
 }

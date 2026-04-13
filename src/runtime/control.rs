@@ -1,9 +1,9 @@
 use crate::{
+    StoredMotorCalibration,
     controller::{ControllerInput, ControllerOutput, PendulumController},
     protocol::{
         HallTelemetry, PendulumControlMode, PendulumControlTelemetry, PendulumEstimateTelemetry,
     },
-    StoredMotorCalibration,
 };
 use libm::sinf;
 

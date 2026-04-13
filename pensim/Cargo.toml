@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy_ecs = "0.15"
+bevy_ecs = { version = "0.18.1", default-features = false }
 pendulum-lib = { path = ".." }
 uom = { version = "0.38.0", default-features = false, features = ["autoconvert", "f64", "si", "serde"] }

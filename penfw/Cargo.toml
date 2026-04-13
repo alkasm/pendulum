@@ -5,6 +5,7 @@ edition = "2024"
 default-run = "penfw"
 
 [dependencies]
+bevy_ecs = { version = "0.18.1", default-features = false }
 libm = "0.2"
 postcard = "1.1"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
@@ -28,7 +29,7 @@ esp-wifi = { version = "0.15.1", default-features = false, features = [
     "smoltcp",
     "wifi",
 ] }
-pendulum-lib = { path = "..", default-features = false }
+pendulum-lib = { path = "..", default-features = false, features = ["ecs"] }
 smoltcp = { version = "0.12.0", default-features = false, features = [
     "medium-ethernet",
     "proto-dhcpv4",

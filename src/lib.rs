@@ -8,8 +8,8 @@ pub mod imu;
 pub mod motor;
 pub mod pendulum;
 pub mod protocol;
-pub mod settings_record;
 pub mod runtime;
+pub mod settings_record;
 
 pub use protocol::*;
 

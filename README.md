@@ -59,6 +59,28 @@ $$ I_\textrm{b} \ddot{\theta} = m g l \theta - I_\textrm{w} \ddot{\varphi} $$
 - apply the torque to the wheel
 - repeat in a loop to maintain balance
 
+## desired runtime architecture
+
+The runtime should be split so that the same decision logic runs in firmware and in simulation, with only the hardware-facing effects swapped out.
+
+### module map
+
+- `src/protocol.rs` holds the wire protocol and shared data types. It should stay free of runtime policy.
+- `src/runtime/state_machine.rs` should hold the explicit device lifecycle machine. It should decide which transitions are legal and what effects they require, but it should not talk to hardware.
+- `src/runtime/effects.rs` should hold the effect descriptions and the trait used to execute them. Saving config, validating Wi-Fi, calibrating the motor, and rebooting belong here as abstract actions.
+- `src/runtime/control.rs` should hold the pure control-loop math and motor-drive calculations.
+- `src/runtime/ecs.rs` should hold the Bevy ECS orchestration layer. It should move requests, plans, results, control inputs, motor state, and telemetry through the schedules.
+- `penfw/src/*` should hold only firmware adapters: real sensors, real actuator writes, settings storage, and serial command transport.
+- `pensim/src/*` should hold only simulation adapters: plant updates, simulated sensors, simulated actuator behavior, and TCP command transport.
+
+### decisions
+
+- The device state machine should be pure and explicit. The machine should not read sensors or write hardware directly.
+- Configuration and calibration should be inputs to boot and persistence effects, not hidden globals.
+- ECS should orchestrate the same shared logic on both targets, but it should not become the source of truth for device behavior.
+- The sim should exercise the same command, state transition, and control paths as firmware, with the plant and sensors replaced by simulated equivalents.
+- Hardware differences should live only in the effect execution layer and the platform adapters.
+
 ## sensing and actuation model
 
 To move from a pure ODE to a real control system, we separate the problem into:
