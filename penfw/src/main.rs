@@ -23,7 +23,7 @@ use esp_hal::{main, rng::Rng, timer::timg::TimerGroup};
 use hw::CurrentSensor;
 use motor_drive::{PwmMotorDrive, PwmMotorDriveParts};
 use runtime::{Board, FirmwareRuntime, load_startup_config};
-use settings::SettingsStorage;
+use settings::SettingsService;
 use wifi::WifiService;
 
 #[panic_handler]
@@ -46,7 +46,7 @@ fn main() -> ! {
         peripherals.GPIO39,
     );
 
-    let (settings, startup) = load_startup_config(SettingsStorage::new());
+    let (settings, startup) = load_startup_config(SettingsService::new());
 
     let motor_drive = PwmMotorDrive::new(PwmMotorDriveParts {
         peripheral: peripherals.MCPWM0,

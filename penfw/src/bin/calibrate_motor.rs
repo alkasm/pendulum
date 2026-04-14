@@ -37,7 +37,7 @@ use esp_hal::{
 use hw::Tmag5273;
 use libm::{atan2f, sinf};
 use pendulum_lib::StoredMotorCalibration;
-use settings::{SettingsError, SettingsStorage};
+use settings::{SettingsError, SettingsService};
 
 const CONTROL_PERIOD_MS: u32 = 5;
 
@@ -61,7 +61,7 @@ const PHASE_SEARCH_SETTLE_LOOPS: u32 = 30;
 const PHASE_SEARCH_OFFSETS_DEG: [f32; 4] = [0.0, 90.0, 180.0, 270.0];
 
 fn save_motor_calibration(calibration: StoredMotorCalibration) -> Result<(), SettingsError> {
-    let mut storage = SettingsStorage::new();
+    let mut storage = SettingsService::new();
     storage.save_motor_calibration(&StoredMotorCalibration {
         direction_sign: normalize_sign(calibration.direction_sign),
         electrical_offset_deg: wrap_degrees(calibration.electrical_offset_deg),

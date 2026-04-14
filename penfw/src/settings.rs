@@ -59,11 +59,11 @@ impl From<RecordEncodeError> for SettingsError {
     }
 }
 
-pub struct SettingsStorage {
+pub struct SettingsService {
     flash: FlashStorage,
 }
 
-impl SettingsStorage {
+impl SettingsService {
     pub fn new() -> Self {
         Self {
             flash: FlashStorage::new(),

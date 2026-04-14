@@ -42,7 +42,7 @@ use crate::{
         refine_torque_phase_offset,
     },
     motor_drive::PwmMotorDrive,
-    settings::{SettingsError, SettingsStorage},
+    settings::{SettingsError, SettingsService},
     wifi::WifiService,
 };
 
@@ -55,7 +55,7 @@ pub struct StartupConfig {
     pub geometry: PendulumGeometry,
 }
 
-pub fn load_startup_config(mut settings: SettingsStorage) -> (SettingsStorage, StartupConfig) {
+pub fn load_startup_config(mut settings: SettingsService) -> (SettingsService, StartupConfig) {
     let startup = StartupConfig {
         device: settings.load_device_config().unwrap_or(RecordLoad::Corrupt),
         motor_calibration: settings
@@ -107,7 +107,7 @@ impl Board {
 #[derive(Resource)]
 struct Services {
     delay: esp_hal::delay::Delay,
-    settings: SettingsStorage,
+    settings: SettingsService,
     wifi: WifiService<'static>,
 }
 
@@ -152,7 +152,7 @@ pub struct FirmwareRuntime {
 impl FirmwareRuntime {
     pub fn new(
         board: Board,
-        settings: SettingsStorage,
+        settings: SettingsService,
         delay: esp_hal::delay::Delay,
         wifi: WifiService<'static>,
         startup: StartupConfig,
@@ -250,7 +250,7 @@ impl FirmwareRuntime {
 }
 
 struct ManagementAdapter<'a> {
-    settings: &'a mut SettingsStorage,
+    settings: &'a mut SettingsService,
     wifi: &'a mut WifiService<'static>,
     delay: &'a esp_hal::delay::Delay,
     i2c: &'a mut I2c<'static, Blocking>,

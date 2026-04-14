@@ -11,7 +11,7 @@ use crate::{
     hall::{HallSensor, read_hall_telemetry},
     math::{degrees_to_radians, unwrap_near, wrap_degrees},
     motor_drive::PwmMotorDrive,
-    settings::{SettingsError, SettingsStorage},
+    settings::{SettingsError, SettingsService},
 };
 
 const CONTROL_PERIOD_MS: u32 = 5;
@@ -28,7 +28,7 @@ const PHASE_SEARCH_OFFSETS_DEG: [f32; 4] = [0.0, 90.0, 180.0, 270.0];
 
 #[allow(dead_code)]
 pub fn load_motor_calibration() -> Result<Option<StoredMotorCalibration>, SettingsError> {
-    let mut storage = SettingsStorage::new();
+    let mut storage = SettingsService::new();
     Ok(match storage.load_motor_calibration_record()? {
         RecordLoad::Valid(calibration) if calibration.is_valid() => Some(StoredMotorCalibration {
             direction_sign: normalize_sign(calibration.direction_sign),
@@ -41,7 +41,7 @@ pub fn load_motor_calibration() -> Result<Option<StoredMotorCalibration>, Settin
 
 #[allow(dead_code)]
 pub fn save_motor_calibration(calibration: StoredMotorCalibration) -> Result<(), SettingsError> {
-    let mut storage = SettingsStorage::new();
+    let mut storage = SettingsService::new();
     storage.save_motor_calibration(&StoredMotorCalibration {
         direction_sign: normalize_sign(calibration.direction_sign),
         electrical_offset_deg: wrap_degrees(calibration.electrical_offset_deg),
