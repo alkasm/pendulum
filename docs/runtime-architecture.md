@@ -12,7 +12,7 @@ The runtime is split into four layers.
 
 `src/runtime/effects.rs` owns effect descriptions and effect execution traits. The domain requests actions such as saving config, validating Wi-Fi, or calibrating the motor through `ManagementAction`, and platform adapters implement `ManagementServices` to carry them out.
 
-`src/runtime/ecs.rs` owns ECS resources and domain-level ECS systems. It provides the shared runtime resource model used by both firmware and simulation, including request resources, control inputs, control outputs, motor telemetry, the fixed-step control clock, and the shared `TelemetrySubsystem`.
+`src/runtime/ecs.rs` owns ECS resources and domain-level ECS systems. It provides the shared runtime resource model used by both firmware and simulation, including request resources, control inputs, control outputs, motor telemetry, the fixed-step control clock, and the shared `TelemetryState`.
 
 ## Entrypoints
 
@@ -54,16 +54,16 @@ The fixed-step control path is:
 3. Platform systems apply `ControlOutputs` to hardware or the simulated motor.
 4. Platform systems update `MotorTelemetryResource`.
 5. `advance_clock_system` increments the shared clock.
-6. `capture_runtime_telemetry_system` snapshots the shared runtime state into `TelemetrySubsystem`.
+6. `capture_runtime_telemetry_system` snapshots the shared runtime state into `TelemetryState`.
 7. Platform transport systems publish that telemetry snapshot. Simulation uses the host `TelemetrySender`, while firmware uses a long-lived Wi-Fi-backed TCP transport.
 
 ## Platform Adapters
 
 Firmware-specific ECS systems live in `penfw/src/runtime.rs`.
 
-They are split around a literal `Hardware` resource plus private service and runtime-state resources. Serial, current sensing, PWM drive, and the shared I2C bus live in `Hardware`, while flash-backed effects, command framing state, estimator/session state, and the long-lived Wi-Fi service stay out of the hardware bucket. Hardware details stay in firmware modules such as `settings`, `hall`, `imu`, `motor_drive`, and `wifi`.
+They are split around a literal `Board` resource plus private service and runtime-state resources. Serial, current sensing, PWM drive, and the shared I2C bus live in `Board`, while flash-backed effects, command framing state, estimator/session state, and the long-lived Wi-Fi service stay out of the board bucket. Board details stay in firmware modules such as `settings`, `hall`, `imu`, `motor_drive`, and `wifi`.
 
-Firmware now uses the same shared `TelemetrySubsystem` as simulation. The difference is only the transport backend: firmware streams the latest runtime telemetry packet over a persistent Wi-Fi TCP listener on the configured telemetry port.
+Firmware now uses the same shared `TelemetryState` as simulation. The difference is only the transport backend: firmware streams the latest runtime telemetry packet over a persistent Wi-Fi TCP listener on the configured telemetry port.
 
 Simulation-specific ECS systems live in `pensim/src/runtime.rs`.
 

@@ -16,7 +16,7 @@ use pendulum_lib::{
         ControlInputs, ControlOutputs, DeviceModelResource, HallElectricalCalibration,
         ManagementServices, MotorDriveState, MotorTelemetryResource, PendingDeviceActionResult,
         PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse, PendingReboot,
-        TelemetrySubsystem, advance_clock_system, capture_runtime_telemetry_system, control_system,
+        TelemetryState, advance_clock_system, capture_runtime_telemetry_system, control_system,
         device_request_finalize_system, device_request_system, execute_management_action,
         initialize_runtime_world, max_phase_current_amps,
     },
@@ -105,7 +105,7 @@ impl Board {
 }
 
 #[derive(Resource)]
-struct ManagementResources {
+struct Services {
     delay: esp_hal::delay::Delay,
     settings: SettingsStorage,
     wifi: WifiService<'static>,
@@ -167,7 +167,7 @@ impl FirmwareRuntime {
             &startup.motor_calibration,
         );
         world.insert_resource(board);
-        world.insert_resource(ManagementResources {
+        world.insert_resource(Services {
             delay,
             settings,
             wifi,
@@ -360,7 +360,7 @@ fn poll_command_system(
 }
 
 fn firmware_execute_effects_system(
-    mut resources: ResMut<'_, ManagementResources>,
+    mut services: ResMut<'_, Services>,
     mut board: ResMut<'_, Board>,
     mut runtime_state: ResMut<'_, RuntimeState>,
     plan: Res<'_, PendingDevicePlan>,
@@ -374,11 +374,11 @@ fn firmware_execute_effects_system(
         return;
     };
 
-    let ManagementResources {
+    let Services {
         delay,
         settings,
         wifi,
-    } = &mut *resources;
+    } = &mut *services;
     let Board {
         i2c, motor_drive, ..
     } = &mut *board;
@@ -399,10 +399,10 @@ fn firmware_execute_effects_system(
 
 fn firmware_stream_telemetry_system(
     device: Res<'_, DeviceModelResource>,
-    telemetry: Res<'_, TelemetrySubsystem>,
-    mut resources: ResMut<'_, ManagementResources>,
+    telemetry: Res<'_, TelemetryState>,
+    mut services: ResMut<'_, Services>,
 ) {
-    resources.wifi.stream_runtime_telemetry(
+    services.wifi.stream_runtime_telemetry(
         device.0.config.wifi.as_ref(),
         telemetry.port,
         telemetry.latest_frame.as_ref(),

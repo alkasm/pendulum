@@ -85,14 +85,14 @@ pub struct ControlOutputs {
 pub struct MotorTelemetryResource(pub MotorTelemetry);
 
 #[derive(Resource, Debug, Clone, Copy)]
-pub struct TelemetrySubsystem {
+pub struct TelemetryState {
     // Shared runtime telemetry state. Platforms all capture the same latest frame here,
     // then their own transport systems decide how to publish it.
     pub port: u16,
     pub latest_frame: Option<crate::RuntimeTelemetryFrame>,
 }
 
-impl Default for TelemetrySubsystem {
+impl Default for TelemetryState {
     fn default() -> Self {
         Self {
             port: crate::DEFAULT_RUNTIME_TELEMETRY_PORT,
@@ -143,7 +143,7 @@ pub fn initialize_runtime_world(
     world.insert_resource(ControlInputs::default());
     world.insert_resource(ControlOutputs::default());
     world.insert_resource(MotorTelemetryResource::default());
-    world.insert_resource(TelemetrySubsystem::default());
+    world.insert_resource(TelemetryState::default());
     world.insert_resource(PendingDeviceRequest::default());
     world.insert_resource(PendingDeviceResponse::default());
     world.insert_resource(PendingDevicePlan::default());
@@ -247,7 +247,7 @@ pub fn capture_runtime_telemetry_system(
     inputs: Res<'_, ControlInputs>,
     outputs: Res<'_, ControlOutputs>,
     motor_telemetry: Res<'_, MotorTelemetryResource>,
-    mut telemetry: ResMut<'_, TelemetrySubsystem>,
+    mut telemetry: ResMut<'_, TelemetryState>,
 ) {
     telemetry.latest_frame = Some(runtime_telemetry_frame(
         &clock,
@@ -260,7 +260,7 @@ pub fn capture_runtime_telemetry_system(
 #[cfg(feature = "std")]
 pub fn publish_telemetry_system(
     publisher: Res<'_, TelemetryPublisher>,
-    telemetry: Res<'_, TelemetrySubsystem>,
+    telemetry: Res<'_, TelemetryState>,
 ) {
     let Some(frame) = telemetry.latest_frame else {
         return;
