@@ -24,7 +24,7 @@ use hw::CurrentSensor;
 use motor_drive::{PwmMotorDrive, PwmMotorDriveParts};
 use runtime::{Board, FirmwareRuntime, load_startup_config};
 use settings::SettingsStorage;
-use wifi::WifiValidator;
+use wifi::WifiService;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -61,13 +61,13 @@ fn main() -> ! {
 
     let i2c = init_primary_i2c(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
-    let wifi_validator = WifiValidator::new(
+    let wifi = WifiService::new(
         timer_group.timer0,
         Rng::new(peripherals.RNG),
         peripherals.WIFI,
     )
-    .expect("failed to initialize Wi-Fi validator");
+    .expect("failed to initialize Wi-Fi service");
 
     let board = Board::new(serial, current_sensor, motor_drive, i2c);
-    FirmwareRuntime::new(board, settings, delay, wifi_validator, startup).run()
+    FirmwareRuntime::new(board, settings, delay, wifi, startup).run()
 }

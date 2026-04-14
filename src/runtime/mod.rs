@@ -17,8 +17,9 @@ pub use core::{StepRuntime, run_loop};
 pub use ecs::{
     ControlClock, ControlInputs, ControlOutputs, DeviceInfoResource, DeviceModelResource,
     MotorTelemetryResource, PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest,
-    PendingDeviceResponse, PendingReboot, advance_clock_system, control_system,
-    device_request_finalize_system, device_request_system, initialize_runtime_world,
+    PendingDeviceResponse, PendingReboot, TelemetrySubsystem, advance_clock_system,
+    capture_runtime_telemetry_system, control_system, device_request_finalize_system,
+    device_request_system, initialize_runtime_world, runtime_telemetry_frame,
 };
 #[cfg(feature = "std")]
 pub use ecs::{TelemetryPublisher, publish_telemetry_system};

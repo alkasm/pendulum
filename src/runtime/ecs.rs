@@ -84,10 +84,51 @@ pub struct ControlOutputs {
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct MotorTelemetryResource(pub MotorTelemetry);
 
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct TelemetrySubsystem {
+    // Shared runtime telemetry state. Platforms all capture the same latest frame here,
+    // then their own transport systems decide how to publish it.
+    pub port: u16,
+    pub latest_frame: Option<crate::RuntimeTelemetryFrame>,
+}
+
+impl Default for TelemetrySubsystem {
+    fn default() -> Self {
+        Self {
+            port: crate::DEFAULT_RUNTIME_TELEMETRY_PORT,
+            latest_frame: None,
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 #[derive(Resource, Clone)]
 pub struct TelemetryPublisher {
     pub sender: crate::telemetry::TelemetrySender,
+}
+
+pub fn runtime_telemetry_frame(
+    clock: &ControlClock,
+    inputs: &ControlInputs,
+    outputs: &ControlOutputs,
+    motor_telemetry: &MotorTelemetryResource,
+) -> crate::RuntimeTelemetryFrame {
+    let imu = inputs.imu.unwrap_or_default();
+    let wheel_angle = inputs.wheel_angle.unwrap_or_default();
+
+    crate::RuntimeTelemetryFrame {
+        step: clock.step,
+        sim_time: clock.sim_time,
+        theta: imu.theta,
+        theta_dot: imu.theta_dot,
+        wheel_angle,
+        wheel_speed: motor_telemetry.0.wheel_speed,
+        commanded_torque: outputs.motor_command.torque_command,
+        applied_torque: motor_telemetry.0.applied_torque,
+        available_torque: motor_telemetry.0.available_torque,
+        speed_ratio: motor_telemetry.0.speed_ratio,
+        phase_current: motor_telemetry.0.phase_current,
+    }
 }
 
 pub fn initialize_runtime_world(
@@ -102,6 +143,7 @@ pub fn initialize_runtime_world(
     world.insert_resource(ControlInputs::default());
     world.insert_resource(ControlOutputs::default());
     world.insert_resource(MotorTelemetryResource::default());
+    world.insert_resource(TelemetrySubsystem::default());
     world.insert_resource(PendingDeviceRequest::default());
     world.insert_resource(PendingDeviceResponse::default());
     world.insert_resource(PendingDevicePlan::default());
@@ -200,27 +242,29 @@ pub fn advance_clock_system(mut clock: ResMut<'_, ControlClock>) {
     clock.sim_time += dt;
 }
 
-#[cfg(feature = "std")]
-pub fn publish_telemetry_system(
-    publisher: Res<'_, TelemetryPublisher>,
+pub fn capture_runtime_telemetry_system(
     clock: Res<'_, ControlClock>,
     inputs: Res<'_, ControlInputs>,
     outputs: Res<'_, ControlOutputs>,
     motor_telemetry: Res<'_, MotorTelemetryResource>,
+    mut telemetry: ResMut<'_, TelemetrySubsystem>,
 ) {
-    let imu = inputs.imu.unwrap_or_default();
-    let wheel_angle = inputs.wheel_angle.unwrap_or_default();
-    publisher.sender.send(crate::telemetry::TelemetryFrame {
-        step: clock.step,
-        sim_time: clock.sim_time,
-        theta: imu.theta,
-        theta_dot: imu.theta_dot,
-        wheel_angle,
-        wheel_speed: motor_telemetry.0.wheel_speed,
-        commanded_torque: outputs.motor_command.torque_command,
-        applied_torque: motor_telemetry.0.applied_torque,
-        available_torque: motor_telemetry.0.available_torque,
-        speed_ratio: motor_telemetry.0.speed_ratio,
-        phase_current: motor_telemetry.0.phase_current,
-    });
+    telemetry.latest_frame = Some(runtime_telemetry_frame(
+        &clock,
+        &inputs,
+        &outputs,
+        &motor_telemetry,
+    ));
+}
+
+#[cfg(feature = "std")]
+pub fn publish_telemetry_system(
+    publisher: Res<'_, TelemetryPublisher>,
+    telemetry: Res<'_, TelemetrySubsystem>,
+) {
+    let Some(frame) = telemetry.latest_frame else {
+        return;
+    };
+
+    publisher.sender.send(frame);
 }

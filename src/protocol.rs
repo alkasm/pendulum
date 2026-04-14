@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uom::si::f64::{Angle, AngularVelocity, ElectricCurrent, Time, Torque};
 
 pub const DEFAULT_SENSOR_TELEMETRY_BAUD: u32 = 115_200;
+pub const DEFAULT_RUNTIME_TELEMETRY_PORT: u16 = 7001;
 pub const DEVICE_PROTOCOL_VERSION: u16 = 1;
 
 pub type FirmwareName = FixedString<24>;

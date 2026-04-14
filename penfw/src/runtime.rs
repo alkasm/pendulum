@@ -16,9 +16,9 @@ use pendulum_lib::{
         ControlInputs, ControlOutputs, DeviceModelResource, HallElectricalCalibration,
         ManagementServices, MotorDriveState, MotorTelemetryResource, PendingDeviceActionResult,
         PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse, PendingReboot,
-        advance_clock_system, control_system, device_request_finalize_system,
-        device_request_system, execute_management_action, initialize_runtime_world,
-        max_phase_current_amps,
+        TelemetrySubsystem, advance_clock_system, capture_runtime_telemetry_system, control_system,
+        device_request_finalize_system, device_request_system, execute_management_action,
+        initialize_runtime_world, max_phase_current_amps,
     },
     settings_record::RecordLoad,
 };
@@ -43,7 +43,7 @@ use crate::{
     },
     motor_drive::PwmMotorDrive,
     settings::{SettingsError, SettingsStorage},
-    wifi::WifiValidator,
+    wifi::WifiService,
 };
 
 const BASELINE_SAMPLES: u32 = 64;
@@ -108,7 +108,7 @@ impl Board {
 struct ManagementResources {
     delay: esp_hal::delay::Delay,
     settings: SettingsStorage,
-    wifi_validator: WifiValidator<'static>,
+    wifi: WifiService<'static>,
 }
 
 #[derive(Resource)]
@@ -154,7 +154,7 @@ impl FirmwareRuntime {
         board: Board,
         settings: SettingsStorage,
         delay: esp_hal::delay::Delay,
-        wifi_validator: WifiValidator<'static>,
+        wifi: WifiService<'static>,
         startup: StartupConfig,
     ) -> Self {
         let mut world = World::new();
@@ -170,7 +170,7 @@ impl FirmwareRuntime {
         world.insert_resource(ManagementResources {
             delay,
             settings,
-            wifi_validator,
+            wifi,
         });
         world.insert_resource(RuntimeState::new(startup.geometry, startup.params.dt));
         world.insert_resource(CommandScheduleActivity::default());
@@ -197,6 +197,8 @@ impl FirmwareRuntime {
                 control_system,
                 apply_motor_output_system,
                 advance_clock_system,
+                capture_runtime_telemetry_system,
+                firmware_stream_telemetry_system,
             )
                 .chain(),
         );
@@ -249,7 +251,7 @@ impl FirmwareRuntime {
 
 struct ManagementAdapter<'a> {
     settings: &'a mut SettingsStorage,
-    wifi_validator: &'a mut WifiValidator<'static>,
+    wifi: &'a mut WifiService<'static>,
     delay: &'a esp_hal::delay::Delay,
     i2c: &'a mut I2c<'static, Blocking>,
     hall_sensor: &'a mut HallSensor,
@@ -282,7 +284,7 @@ impl<'a> ManagementServices for ManagementAdapter<'a> {
             status: pendulum_lib::WifiStatus {
                 ssid: Some(credentials.ssid.clone()),
             },
-            result: self.wifi_validator.validate(credentials, self.delay),
+            result: self.wifi.validate(credentials, self.delay),
         }
     }
 
@@ -375,7 +377,7 @@ fn firmware_execute_effects_system(
     let ManagementResources {
         delay,
         settings,
-        wifi_validator,
+        wifi,
     } = &mut *resources;
     let Board {
         i2c, motor_drive, ..
@@ -383,7 +385,7 @@ fn firmware_execute_effects_system(
     let RuntimeState { hall_sensor, .. } = &mut *runtime_state;
     let mut action_services = ManagementAdapter {
         settings,
-        wifi_validator,
+        wifi,
         delay: &*delay,
         i2c,
         hall_sensor,
@@ -393,6 +395,18 @@ fn firmware_execute_effects_system(
         pending_plan.action.clone(),
         &mut action_services,
     ));
+}
+
+fn firmware_stream_telemetry_system(
+    device: Res<'_, DeviceModelResource>,
+    telemetry: Res<'_, TelemetrySubsystem>,
+    mut resources: ResMut<'_, ManagementResources>,
+) {
+    resources.wifi.stream_runtime_telemetry(
+        device.0.config.wifi.as_ref(),
+        telemetry.port,
+        telemetry.latest_frame.as_ref(),
+    );
 }
 
 fn write_response_system(

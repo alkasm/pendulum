@@ -10,9 +10,9 @@ The runtime is split into four layers.
 
 `src/runtime/lifecycle.rs` owns boot, request planning, and request finalization. This layer is pure domain logic. It decides which state transitions are allowed and which side effects are required, but it does not talk to flash, Wi-Fi, motors, or sensors directly.
 
-`src/runtime/effects.rs` owns effect descriptions and effect execution traits. The domain requests actions such as saving config, validating Wi-Fi, or calibrating the motor through `DeviceAction`, and platform adapters implement `DeviceServices` to carry them out.
+`src/runtime/effects.rs` owns effect descriptions and effect execution traits. The domain requests actions such as saving config, validating Wi-Fi, or calibrating the motor through `ManagementAction`, and platform adapters implement `ManagementServices` to carry them out.
 
-`src/runtime/ecs.rs` owns ECS resources and domain-level ECS systems. It provides the shared runtime resource model used by both firmware and simulation, including request resources, control inputs, control outputs, motor telemetry, and the fixed-step control clock.
+`src/runtime/ecs.rs` owns ECS resources and domain-level ECS systems. It provides the shared runtime resource model used by both firmware and simulation, including request resources, control inputs, control outputs, motor telemetry, the fixed-step control clock, and the shared `TelemetrySubsystem`.
 
 ## Entrypoints
 
@@ -24,7 +24,7 @@ After entry, both platforms run the same domain runtime shape:
 
 1. Boot a `DeviceModel` from persisted records and an explicit controller config.
 2. Run a command pipeline that polls transport, plans requests, executes effects, finalizes replies, and handles reboot.
-3. Run a control pipeline that samples sensors, steps the controller, applies the actuator command, advances the clock, and publishes telemetry where supported.
+3. Run a control pipeline that samples sensors, steps the controller, applies the actuator command, advances the clock, captures a runtime telemetry snapshot, and hands that snapshot to the platform transport.
 
 ## Boot And Config
 
@@ -54,17 +54,20 @@ The fixed-step control path is:
 3. Platform systems apply `ControlOutputs` to hardware or the simulated motor.
 4. Platform systems update `MotorTelemetryResource`.
 5. `advance_clock_system` increments the shared clock.
-6. `publish_telemetry_system` reads the shared resources and emits runtime telemetry on host builds.
+6. `capture_runtime_telemetry_system` snapshots the shared runtime state into `TelemetrySubsystem`.
+7. Platform transport systems publish that telemetry snapshot. Simulation uses the host `TelemetrySender`, while firmware uses a long-lived Wi-Fi-backed TCP transport.
 
 ## Platform Adapters
 
 Firmware-specific ECS systems live in `penfw/src/runtime.rs`.
 
-They are split around a literal `Hardware` resource plus private service and runtime-state resources. Serial, current sensing, PWM drive, and the shared I2C bus live in `Hardware`, while flash-backed effects, Wi-Fi validation, command framing state, and estimator/session state are kept out of the hardware bucket. Hardware details stay in firmware modules such as `settings`, `hall`, `imu`, and `motor_drive`.
+They are split around a literal `Hardware` resource plus private service and runtime-state resources. Serial, current sensing, PWM drive, and the shared I2C bus live in `Hardware`, while flash-backed effects, command framing state, estimator/session state, and the long-lived Wi-Fi service stay out of the hardware bucket. Hardware details stay in firmware modules such as `settings`, `hall`, `imu`, `motor_drive`, and `wifi`.
+
+Firmware now uses the same shared `TelemetrySubsystem` as simulation. The difference is only the transport backend: firmware streams the latest runtime telemetry packet over a persistent Wi-Fi TCP listener on the configured telemetry port.
 
 Simulation-specific ECS systems live in `pensim/src/runtime.rs`.
 
-They own TCP command intake, simulated IMU sampling, motor model stepping, plant stepping, and world reset after reboot.
+They own TCP command intake, simulated IMU sampling, motor model stepping, plant stepping, world reset after reboot, and the host-side telemetry sender transport.
 
 ## Boundary Rules
 
