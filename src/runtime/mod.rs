@@ -15,11 +15,14 @@ pub use control::{
 pub use core::{StepRuntime, run_loop};
 #[cfg(feature = "ecs")]
 pub use ecs::{
-    ControlClock, ControlInputs, ControlOutputs, DeviceInfoResource, DeviceModelResource,
-    MotorTelemetryResource, PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest,
-    PendingDeviceResponse, PendingReboot, TelemetryState, advance_clock_system,
-    capture_runtime_telemetry_system, control_system, device_request_finalize_system,
-    device_request_system, initialize_runtime_world, runtime_telemetry_frame,
+    CommandPipelineActivity, CommandPipelineStage, ControlClock, ControlInputs, ControlOutputs,
+    ControlPipelineStage, DeviceInfoResource, DeviceModelResource, MotorTelemetryResource,
+    PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse,
+    PendingReboot, TelemetryState, add_command_pipeline, add_control_pipeline,
+    advance_clock_system, capture_runtime_telemetry_system, configure_command_pipeline,
+    configure_control_pipeline, control_system, device_request_finalize_system,
+    device_request_system, initialize_runtime_world, reset_command_pipeline_activity_system,
+    runtime_telemetry_frame,
 };
 #[cfg(feature = "std")]
 pub use ecs::{TelemetryPublisher, publish_telemetry_system};

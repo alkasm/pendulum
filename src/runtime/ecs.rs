@@ -1,4 +1,4 @@
-use bevy_ecs::prelude::*;
+use bevy_ecs::{prelude::*, schedule::IntoScheduleConfigs, system::ScheduleSystem};
 
 use super::{
     effects::{CommandReply, ManagementAction, ManagementActionCompletion, ManagementActionResult},
@@ -50,6 +50,30 @@ pub struct PendingDeviceActionResult(
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PendingReboot(pub bool);
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct CommandPipelineActivity {
+    pub progressed: bool,
+}
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CommandPipelineStage {
+    PollRequest,
+    PlanRequest,
+    ExecuteEffects,
+    FinalizeReply,
+    Respond,
+}
+
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ControlPipelineStage {
+    SampleSensors,
+    RunController,
+    ApplyOutputs,
+    AdvanceClock,
+    CaptureTelemetry,
+    PublishTelemetry,
+}
 
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct ControlClock {
@@ -149,12 +173,83 @@ pub fn initialize_runtime_world(
     world.insert_resource(PendingDevicePlan::default());
     world.insert_resource(PendingDeviceActionResult::default());
     world.insert_resource(PendingReboot::default());
+    world.insert_resource(CommandPipelineActivity::default());
     world.insert_resource(DeviceInfoResource(device_info));
     world.insert_resource(DeviceModelResource(boot_device_model(
         config_record,
         calibration_record,
         controller_config,
     )));
+}
+
+pub fn reset_command_pipeline_activity_system(mut activity: ResMut<'_, CommandPipelineActivity>) {
+    activity.progressed = false;
+}
+
+pub fn configure_command_pipeline(schedule: &mut Schedule) {
+    schedule.configure_sets(
+        (
+            CommandPipelineStage::PollRequest,
+            CommandPipelineStage::PlanRequest,
+            CommandPipelineStage::ExecuteEffects,
+            CommandPipelineStage::FinalizeReply,
+            CommandPipelineStage::Respond,
+        )
+            .chain(),
+    );
+}
+
+pub fn configure_control_pipeline(schedule: &mut Schedule) {
+    schedule.configure_sets(
+        (
+            ControlPipelineStage::SampleSensors,
+            ControlPipelineStage::RunController,
+            ControlPipelineStage::ApplyOutputs,
+            ControlPipelineStage::AdvanceClock,
+            ControlPipelineStage::CaptureTelemetry,
+            ControlPipelineStage::PublishTelemetry,
+        )
+            .chain(),
+    );
+}
+
+pub fn add_command_pipeline<MPoll, MExecute, MRespond>(
+    schedule: &mut Schedule,
+    poll_request: impl IntoScheduleConfigs<ScheduleSystem, MPoll>,
+    execute_effects: impl IntoScheduleConfigs<ScheduleSystem, MExecute>,
+    respond: impl IntoScheduleConfigs<ScheduleSystem, MRespond>,
+) {
+    // A runtime's command pipeline is assembled from three platform hooks:
+    // poll a request, execute platform effects, and respond. The domain-owned
+    // planning/finalization stages stay fixed in the middle.
+    configure_command_pipeline(schedule);
+    schedule.add_systems((
+        poll_request.in_set(CommandPipelineStage::PollRequest),
+        device_request_system.in_set(CommandPipelineStage::PlanRequest),
+        execute_effects.in_set(CommandPipelineStage::ExecuteEffects),
+        device_request_finalize_system.in_set(CommandPipelineStage::FinalizeReply),
+        respond.in_set(CommandPipelineStage::Respond),
+    ));
+}
+
+pub fn add_control_pipeline<MSample, MApply, MPublish>(
+    schedule: &mut Schedule,
+    sample_sensors: impl IntoScheduleConfigs<ScheduleSystem, MSample>,
+    apply_outputs: impl IntoScheduleConfigs<ScheduleSystem, MApply>,
+    publish_telemetry: impl IntoScheduleConfigs<ScheduleSystem, MPublish>,
+) {
+    // A runtime's control pipeline is assembled from three platform hooks:
+    // sample sensors, apply actuator outputs, and publish telemetry. The
+    // controller, clock, and telemetry capture stages stay shared.
+    configure_control_pipeline(schedule);
+    schedule.add_systems((
+        sample_sensors.in_set(ControlPipelineStage::SampleSensors),
+        control_system.in_set(ControlPipelineStage::RunController),
+        apply_outputs.in_set(ControlPipelineStage::ApplyOutputs),
+        advance_clock_system.in_set(ControlPipelineStage::AdvanceClock),
+        capture_runtime_telemetry_system.in_set(ControlPipelineStage::CaptureTelemetry),
+        publish_telemetry.in_set(ControlPipelineStage::PublishTelemetry),
+    ));
 }
 
 pub fn device_request_system(

@@ -12,7 +12,7 @@ The runtime is split into four layers.
 
 `src/runtime/effects.rs` owns effect descriptions and effect execution traits. The domain requests actions such as saving config, validating Wi-Fi, or calibrating the motor through `ManagementAction`, and platform adapters implement `ManagementServices` to carry them out.
 
-`src/runtime/ecs.rs` owns ECS resources and domain-level ECS systems. It provides the shared runtime resource model used by both firmware and simulation, including request resources, control inputs, control outputs, motor telemetry, the fixed-step control clock, and the shared `TelemetryState`.
+`src/runtime/ecs.rs` owns ECS resources, domain-level ECS systems, and the shared pipeline definitions used by both firmware and simulation. It provides the shared runtime resource model, including request resources, control inputs, control outputs, motor telemetry, the fixed-step control clock, `TelemetryState`, and the named command/control pipeline stages.
 
 ## Entrypoints
 
@@ -23,8 +23,8 @@ Simulation starts in `pensim/src/main.rs`. Its job is only process setup: create
 After entry, both platforms run the same domain runtime shape:
 
 1. Boot a `DeviceModel` from persisted records and an explicit controller config.
-2. Run a command pipeline that polls transport, plans requests, executes effects, finalizes replies, and handles reboot.
-3. Run a control pipeline that samples sensors, steps the controller, applies the actuator command, advances the clock, captures a runtime telemetry snapshot, and hands that snapshot to the platform transport.
+2. Build a command pipeline with the shared runtime stages: poll request, plan request, execute effects, finalize reply, and respond.
+3. Build a control pipeline with the shared runtime stages: sample sensors, run controller, apply outputs, advance clock, capture telemetry, and publish telemetry.
 
 ## Boot And Config
 
@@ -56,6 +56,8 @@ The fixed-step control path is:
 5. `advance_clock_system` increments the shared clock.
 6. `capture_runtime_telemetry_system` snapshots the shared runtime state into `TelemetryState`.
 7. Platform transport systems publish that telemetry snapshot. Simulation uses the host `TelemetrySender`, while firmware uses a long-lived Wi-Fi-backed TCP transport.
+
+The important architectural rule is that the pipelines stay independent through ECS resources rather than direct calls. A stage reads the state it needs, writes the next state, and the next stage picks that up through the world. Firmware and simulation differ only in which platform systems they plug into the named pipeline stages.
 
 ## Platform Adapters
 

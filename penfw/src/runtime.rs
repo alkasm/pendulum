@@ -13,12 +13,12 @@ use pendulum_lib::{
     imu::ImuSample,
     pendulum::PendulumGeometry,
     runtime::{
-        ControlInputs, ControlOutputs, DeviceModelResource, HallElectricalCalibration,
-        ManagementServices, MotorDriveState, MotorTelemetryResource, PendingDeviceActionResult,
-        PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse, PendingReboot,
-        TelemetryState, advance_clock_system, capture_runtime_telemetry_system, control_system,
-        device_request_finalize_system, device_request_system, execute_management_action,
-        initialize_runtime_world, max_phase_current_amps,
+        CommandPipelineActivity, ControlInputs, ControlOutputs, DeviceModelResource,
+        HallElectricalCalibration, ManagementServices, MotorDriveState, MotorTelemetryResource,
+        PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse,
+        PendingReboot, TelemetryState, add_command_pipeline, add_control_pipeline,
+        execute_management_action, initialize_runtime_world, max_phase_current_amps,
+        reset_command_pipeline_activity_system,
     },
     settings_record::RecordLoad,
 };
@@ -143,9 +143,9 @@ pub struct FirmwareRuntime {
     // Handles variable-length command/response work. We only run this in the slack
     // before the next scheduled control tick so management traffic cannot arbitrarily
     // delay the control cadence.
-    command_schedule: Schedule,
+    command_pipeline: Schedule,
     // Handles the fixed-rate sensor -> controller -> actuator pipeline.
-    control_schedule: Schedule,
+    control_pipeline: Schedule,
     control_period: Duration,
 }
 
@@ -173,40 +173,27 @@ impl FirmwareRuntime {
             wifi,
         });
         world.insert_resource(RuntimeState::new(startup.geometry, startup.params.dt));
-        world.insert_resource(CommandScheduleActivity::default());
 
-        let mut command_schedule = Schedule::default();
-        command_schedule.add_systems(
-            (
-                reset_command_activity_system,
-                poll_command_system,
-                device_request_system,
-                firmware_execute_effects_system,
-                device_request_finalize_system,
-                write_response_system,
-            )
-                .chain(),
+        let mut command_pipeline = Schedule::default();
+        add_command_pipeline(
+            &mut command_pipeline,
+            (reset_command_pipeline_activity_system, poll_command_system),
+            firmware_execute_effects_system,
+            write_response_system,
         );
 
-        let mut control_schedule = Schedule::default();
-        control_schedule.add_systems(
-            (
-                sample_current_system,
-                sample_hall_system,
-                sample_imu_system,
-                control_system,
-                apply_motor_output_system,
-                advance_clock_system,
-                capture_runtime_telemetry_system,
-                firmware_stream_telemetry_system,
-            )
-                .chain(),
+        let mut control_pipeline = Schedule::default();
+        add_control_pipeline(
+            &mut control_pipeline,
+            (sample_current_system, sample_hall_system, sample_imu_system),
+            apply_motor_output_system,
+            firmware_stream_telemetry_system,
         );
 
         Self {
             world,
-            command_schedule,
-            control_schedule,
+            command_pipeline,
+            control_pipeline,
             control_period: Duration::from_micros(
                 startup.params.dt.get::<microsecond>().round() as u64
             ),
@@ -218,26 +205,26 @@ impl FirmwareRuntime {
 
         loop {
             // Spend any slack before the next control tick on command processing.
-            self.drain_command_schedule_until(next_control_start);
+            self.drain_command_pipeline_until(next_control_start);
             // Once the control deadline arrives, run exactly one control tick.
             while Instant::now() < next_control_start {
                 core::hint::spin_loop();
             }
-            self.control_schedule.run(&mut self.world);
+            self.control_pipeline.run(&mut self.world);
             next_control_start += self.control_period;
         }
     }
 
-    fn drain_command_schedule_until(&mut self, deadline: Instant) {
+    fn drain_command_pipeline_until(&mut self, deadline: Instant) {
         loop {
             if Instant::now() >= deadline {
                 break;
             }
 
-            self.command_schedule.run(&mut self.world);
+            self.command_pipeline.run(&mut self.world);
             let progressed = self
                 .world
-                .get_resource::<CommandScheduleActivity>()
+                .get_resource::<CommandPipelineActivity>()
                 .expect("command schedule activity missing")
                 .progressed;
             // Stop once a full command pass made no forward progress, or once we've
@@ -316,13 +303,6 @@ impl<'a> ManagementServices for ManagementAdapter<'a> {
     }
 }
 
-#[derive(Resource, Default)]
-struct CommandScheduleActivity {
-    // Set when a command pass consumed input from transport. This lets the outer loop rerun the
-    // schedule while there is still both pending work and time left before the next control tick.
-    progressed: bool,
-}
-
 fn firmware_device_info() -> DeviceInfo {
     let mut firmware_name = FirmwareName::new();
     let _ = firmware_name.push_str(env!("CARGO_PKG_NAME"));
@@ -337,15 +317,11 @@ fn firmware_device_info() -> DeviceInfo {
     }
 }
 
-fn reset_command_activity_system(mut activity: ResMut<'_, CommandScheduleActivity>) {
-    activity.progressed = false;
-}
-
 fn poll_command_system(
     mut board: ResMut<'_, Board>,
     mut runtime_state: ResMut<'_, RuntimeState>,
     mut request: ResMut<'_, PendingDeviceRequest>,
-    mut activity: ResMut<'_, CommandScheduleActivity>,
+    mut activity: ResMut<'_, CommandPipelineActivity>,
 ) {
     if request.0.is_some() {
         return;
