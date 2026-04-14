@@ -19,20 +19,12 @@ mod settings;
 mod wifi;
 
 use bringup::{init_console, init_delay, init_primary_i2c, max_clock_config};
-use esp_hal::{
-    main,
-    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
-    rng::Rng,
-    time::Rate,
-    timer::timg::TimerGroup,
-};
+use esp_hal::{main, rng::Rng, timer::timg::TimerGroup};
 use hw::CurrentSensor;
-use motor_drive::{PWM_PERIOD_TICKS, PwmMotorDrive, low_side_pwm_config};
+use motor_drive::{PwmMotorDrive, PwmMotorDriveParts};
 use runtime::{FirmwareHardware, FirmwareRuntime, load_firmware_config};
 use settings::SettingsStorage;
 use wifi::WifiValidator;
-
-const PWM_FREQUENCY_HZ: u32 = 32_000;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -56,39 +48,16 @@ fn main() -> ! {
 
     let (settings, config) = load_firmware_config(SettingsStorage::new());
 
-    let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_mhz(160))
-        .expect("failed to configure MCPWM clock");
-    let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
-    mcpwm.operator0.set_timer(&mcpwm.timer0);
-    mcpwm.operator1.set_timer(&mcpwm.timer0);
-    mcpwm.operator2.set_timer(&mcpwm.timer0);
-    let (uh, ul) = mcpwm.operator0.with_pins(
-        peripherals.GPIO16,
-        PwmPinConfig::UP_DOWN_ACTIVE_HIGH,
-        peripherals.GPIO17,
-        low_side_pwm_config(),
-    );
-    let (vh, vl) = mcpwm.operator1.with_pins(
-        peripherals.GPIO18,
-        PwmPinConfig::UP_DOWN_ACTIVE_HIGH,
-        peripherals.GPIO23,
-        low_side_pwm_config(),
-    );
-    let (wh, wl) = mcpwm.operator2.with_pins(
-        peripherals.GPIO19,
-        PwmPinConfig::UP_DOWN_ACTIVE_HIGH,
-        peripherals.GPIO33,
-        low_side_pwm_config(),
-    );
-    let timer_clock_cfg = clock_cfg
-        .timer_clock_with_frequency(
-            PWM_PERIOD_TICKS,
-            PwmWorkingMode::UpDown,
-            Rate::from_hz(PWM_FREQUENCY_HZ),
-        )
-        .expect("failed to configure MCPWM timer");
-    mcpwm.timer0.start(timer_clock_cfg);
-    let motor_drive = PwmMotorDrive::new(peripherals.GPIO5, uh, ul, vh, vl, wh, wl);
+    let motor_drive = PwmMotorDrive::new(PwmMotorDriveParts {
+        peripheral: peripherals.MCPWM0,
+        enable: peripherals.GPIO5,
+        uh: peripherals.GPIO16,
+        ul: peripherals.GPIO17,
+        vh: peripherals.GPIO18,
+        vl: peripherals.GPIO23,
+        wh: peripherals.GPIO19,
+        wl: peripherals.GPIO33,
+    });
 
     let i2c = init_primary_i2c(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
