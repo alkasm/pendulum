@@ -28,7 +28,7 @@ use esp_hal::{
 };
 use hw::CurrentSensor;
 use motor_drive::{PWM_PERIOD_TICKS, PwmMotorDrive, low_side_pwm_config};
-use runtime::{FirmwareRuntime, Hardware, load_firmware_config};
+use runtime::{FirmwareHardware, FirmwareRuntime, load_firmware_config};
 use settings::SettingsStorage;
 use wifi::WifiValidator;
 
@@ -99,6 +99,6 @@ fn main() -> ! {
     )
     .expect("failed to initialize Wi-Fi validator");
 
-    let hardware = Hardware::new(serial, current_sensor, motor_drive, i2c);
+    let hardware = FirmwareHardware::new(serial, current_sensor, motor_drive, i2c);
     FirmwareRuntime::new(hardware, settings, delay, wifi_validator, config).run()
 }
