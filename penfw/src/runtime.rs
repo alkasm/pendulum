@@ -27,7 +27,7 @@ use uom::si::{
     angular_velocity::degree_per_second,
     electric_current::ampere,
     f64::{Angle, AngularVelocity, Time},
-    time::second,
+    time::microsecond,
 };
 
 use crate::{
@@ -139,10 +139,13 @@ impl RuntimeState {
 
 pub struct FirmwareRuntime<'d> {
     world: World,
+    // Handles variable-length command/response work. We only run this in the slack
+    // before the next scheduled control tick so management traffic cannot arbitrarily
+    // delay the control cadence.
     command_schedule: Schedule,
+    // Handles the fixed-rate sensor -> controller -> actuator pipeline.
     control_schedule: Schedule,
     control_period: Duration,
-    last_loop_start: Option<Instant>,
     _marker: core::marker::PhantomData<&'d ()>,
 }
 
@@ -203,35 +206,41 @@ impl<'d> FirmwareRuntime<'d> {
             command_schedule,
             control_schedule,
             control_period: Duration::from_micros(
-                (config.runtime_config.dt.get::<second>() * 1_000_000.0) as u64,
+                config.runtime_config.dt.get::<microsecond>().round() as u64,
             ),
-            last_loop_start: None,
             _marker: core::marker::PhantomData,
         }
     }
 
     pub fn run(&mut self) -> ! {
-        loop {
-            self.drain_command_schedule();
-            let loop_start = Instant::now();
-            self.control_schedule.run(&mut self.world);
-            self.drain_command_schedule();
+        let mut next_control_start = Instant::now();
 
-            while loop_start.elapsed() < self.control_period {
+        loop {
+            // Spend any slack before the next control tick on command processing.
+            self.drain_command_schedule_until(next_control_start);
+            // Once the control deadline arrives, run exactly one control tick.
+            while Instant::now() < next_control_start {
                 core::hint::spin_loop();
             }
-            self.last_loop_start = Some(loop_start);
+            self.control_schedule.run(&mut self.world);
+            next_control_start += self.control_period;
         }
     }
 
-    fn drain_command_schedule(&mut self) {
+    fn drain_command_schedule_until(&mut self, deadline: Instant) {
         loop {
+            if Instant::now() >= deadline {
+                break;
+            }
+
             self.command_schedule.run(&mut self.world);
             let progressed = self
                 .world
                 .get_resource::<CommandScheduleActivity>()
                 .expect("command schedule activity missing")
                 .progressed;
+            // Stop once a full command pass made no forward progress, or once we've
+            // consumed the slack before the next control deadline.
             if !progressed {
                 break;
             }
@@ -308,6 +317,8 @@ impl<'a, 'd> DeviceServices for EffectServices<'a, 'd> {
 
 #[derive(Resource, Default)]
 struct CommandScheduleActivity {
+    // Set when a command pass consumed input from transport. This lets the outer loop rerun the
+    // schedule while there is still both pending work and time left before the next control tick.
     progressed: bool,
 }
 
