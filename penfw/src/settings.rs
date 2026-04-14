@@ -1,7 +1,7 @@
 use embedded_storage::{ReadStorage, Storage};
 use esp_storage::{FlashStorage, FlashStorageError};
 use pendulum_lib::{
-    DeviceMode, StoredDeviceConfig, StoredMotorCalibration, WifiCredentials,
+    StoredDeviceConfig, StoredMotorCalibration,
     settings_record::{
         RecordEncodeError, RecordLoad, SETTINGS_SLOT_SIZE, decode_record, encode_record,
     },
@@ -15,22 +15,7 @@ const _CONTROL_CONFIG_OFFSET: u32 = SETTINGS_BASE_OFFSET + 2 * SETTINGS_SLOT_SIZ
 const DEVICE_CONFIG_MAGIC: u32 = u32::from_le_bytes(*b"DCFG");
 const MOTOR_CALIBRATION_MAGIC: u32 = u32::from_le_bytes(*b"MCAL");
 const DEVICE_CONFIG_RECORD_VERSION: u16 = 2;
-const LEGACY_DEVICE_CONFIG_RECORD_VERSION: u16 = 1;
 const MOTOR_CALIBRATION_RECORD_VERSION: u16 = 1;
-
-#[derive(serde::Deserialize)]
-struct LegacyStoredDeviceConfigV1 {
-    mode: DeviceMode,
-    wifi: Option<WifiCredentials>,
-    wifi_validation: LegacyWifiValidationStateV1,
-}
-
-#[derive(serde::Deserialize)]
-enum LegacyWifiValidationStateV1 {
-    NeverValidated,
-    Validated,
-    ValidationFailed,
-}
 
 #[derive(Debug)]
 pub enum SettingsError {
@@ -73,26 +58,11 @@ impl SettingsService {
     pub fn load_device_config(&mut self) -> Result<RecordLoad<StoredDeviceConfig>, SettingsError> {
         let mut slot = [0_u8; SETTINGS_SLOT_SIZE];
         self.flash.read(DEVICE_CONFIG_OFFSET, &mut slot)?;
-
-        let current = decode_record(&slot, DEVICE_CONFIG_MAGIC, DEVICE_CONFIG_RECORD_VERSION);
-        Ok(match current {
-            RecordLoad::Corrupt => match decode_record::<LegacyStoredDeviceConfigV1>(
-                &slot,
-                DEVICE_CONFIG_MAGIC,
-                LEGACY_DEVICE_CONFIG_RECORD_VERSION,
-            ) {
-                RecordLoad::Valid(legacy) => {
-                    let _ = legacy.wifi_validation;
-                    RecordLoad::Valid(StoredDeviceConfig {
-                        mode: legacy.mode,
-                        wifi: legacy.wifi,
-                    })
-                }
-                RecordLoad::Missing => RecordLoad::Missing,
-                RecordLoad::Corrupt => RecordLoad::Corrupt,
-            },
-            other => other,
-        })
+        Ok(decode_record(
+            &slot,
+            DEVICE_CONFIG_MAGIC,
+            DEVICE_CONFIG_RECORD_VERSION,
+        ))
     }
 
     pub fn save_device_config(&mut self, config: &StoredDeviceConfig) -> Result<(), SettingsError> {
