@@ -14,8 +14,7 @@ use esp_alloc as _;
 mod board_init;
 #[path = "../hw/mod.rs"]
 mod hw;
-#[path = "../motor_calibration.rs"]
-mod motor_calibration;
+#[allow(dead_code)]
 #[path = "../settings.rs"]
 mod settings;
 
@@ -37,7 +36,8 @@ use esp_hal::{
 };
 use hw::Tmag5273;
 use libm::{atan2f, sinf};
-use motor_calibration::{StoredMotorCalibration, save_motor_calibration};
+use pendulum_lib::StoredMotorCalibration;
+use settings::{SettingsError, SettingsStorage};
 
 const CONTROL_PERIOD_MS: u32 = 5;
 
@@ -59,6 +59,15 @@ const PHASE_SEARCH_UQ_V: f32 = 0.9;
 const PHASE_SEARCH_LOOPS: u32 = 140;
 const PHASE_SEARCH_SETTLE_LOOPS: u32 = 30;
 const PHASE_SEARCH_OFFSETS_DEG: [f32; 4] = [0.0, 90.0, 180.0, 270.0];
+
+fn save_motor_calibration(calibration: StoredMotorCalibration) -> Result<(), SettingsError> {
+    let mut storage = SettingsStorage::new();
+    storage.save_motor_calibration(&StoredMotorCalibration {
+        direction_sign: normalize_sign(calibration.direction_sign),
+        electrical_offset_deg: wrap_degrees(calibration.electrical_offset_deg),
+        torque_sign: normalize_sign(calibration.torque_sign),
+    })
+}
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
@@ -90,6 +99,7 @@ struct HallElectricalCalibration {
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
+    esp_alloc::heap_allocator!(size: 72 * 1024);
     let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
     let mut hall = Tmag5273::new(
@@ -565,6 +575,10 @@ fn simplefoc_sine_pwm_phase_voltages(
 fn duty_to_ticks(duty: f32) -> u16 {
     let clamped = clamp(duty, 0.0, 1.0);
     (clamped * PWM_PERIOD_TICKS as f32 + 0.5) as u16
+}
+
+fn normalize_sign(value: f32) -> f32 {
+    if value.is_sign_negative() { -1.0 } else { 1.0 }
 }
 
 fn dt_s() -> f32 {

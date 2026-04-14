@@ -21,6 +21,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+    esp_alloc::heap_allocator!(size: 72 * 1024);
     let mut led = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
 
     loop {

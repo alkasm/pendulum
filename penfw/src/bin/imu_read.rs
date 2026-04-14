@@ -27,6 +27,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(max_clock_config());
+    esp_alloc::heap_allocator!(size: 72 * 1024);
     let mut serial = init_console(peripherals.UART0, peripherals.GPIO1, peripherals.GPIO3);
     let delay = init_delay();
     let mut imu = match Gy521Imu::new(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22) {
