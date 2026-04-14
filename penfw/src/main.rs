@@ -4,8 +4,8 @@
 extern crate alloc;
 
 esp_bootloader_esp_idf::esp_app_desc!();
-#[path = "bringup.rs"]
-mod bringup;
+#[path = "board_init.rs"]
+mod board_init;
 mod command;
 mod hall;
 #[path = "hw/mod.rs"]
@@ -18,11 +18,11 @@ mod runtime;
 mod settings;
 mod wifi;
 
-use bringup::{init_console, init_delay, init_primary_i2c, max_clock_config};
+use board_init::{init_console, init_delay, init_primary_i2c, max_clock_config};
 use esp_hal::{main, rng::Rng, timer::timg::TimerGroup};
 use hw::CurrentSensor;
 use motor_drive::{PwmMotorDrive, PwmMotorDriveParts};
-use runtime::{FirmwareHardware, FirmwareRuntime, load_firmware_config};
+use runtime::{Board, FirmwareRuntime, load_startup_config};
 use settings::SettingsStorage;
 use wifi::WifiValidator;
 
@@ -46,7 +46,7 @@ fn main() -> ! {
         peripherals.GPIO39,
     );
 
-    let (settings, config) = load_firmware_config(SettingsStorage::new());
+    let (settings, startup) = load_startup_config(SettingsStorage::new());
 
     let motor_drive = PwmMotorDrive::new(PwmMotorDriveParts {
         peripheral: peripherals.MCPWM0,
@@ -68,6 +68,6 @@ fn main() -> ! {
     )
     .expect("failed to initialize Wi-Fi validator");
 
-    let hardware = FirmwareHardware::new(serial, current_sensor, motor_drive, i2c);
-    FirmwareRuntime::new(hardware, settings, delay, wifi_validator, config).run()
+    let board = Board::new(serial, current_sensor, motor_drive, i2c);
+    FirmwareRuntime::new(board, settings, delay, wifi_validator, startup).run()
 }

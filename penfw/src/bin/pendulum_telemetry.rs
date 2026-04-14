@@ -3,12 +3,12 @@
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[path = "../bringup.rs"]
-mod bringup;
+#[path = "../board_init.rs"]
+mod board_init;
 #[path = "../hw/mod.rs"]
 mod hw;
 
-use bringup::{
+use board_init::{
     i2c_device_present, init_console, init_delay, init_primary_i2c, max_clock_config, write_bytes,
 };
 use esp_hal::{Blocking, i2c::master::I2c, main};

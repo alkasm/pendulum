@@ -11,7 +11,7 @@ use uom::si::{
 };
 
 use crate::{
-    bringup::i2c_device_present,
+    board_init::i2c_device_present,
     hw::{GY521_DEFAULT_I2C_ADDR, Gy521Error, read_raw_measurement, verify_address, wake_device},
 };
 

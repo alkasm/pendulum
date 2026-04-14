@@ -10,8 +10,8 @@
 esp_bootloader_esp_idf::esp_app_desc!();
 use esp_alloc as _;
 
-#[path = "../bringup.rs"]
-mod bringup;
+#[path = "../board_init.rs"]
+mod board_init;
 #[path = "../hw/mod.rs"]
 mod hw;
 #[path = "../motor_calibration.rs"]
@@ -21,7 +21,7 @@ mod settings;
 
 use core::fmt::Write;
 
-use bringup::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, write_line};
+use board_init::{HALL_SENSOR_ADDR, init_console, init_delay, max_clock_config, write_line};
 use esp_hal::{
     Blocking,
     gpio::{Level, Output, OutputConfig},

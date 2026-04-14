@@ -1,7 +1,7 @@
 use esp_hal::{Blocking, uart::Uart};
 use pendulum_lib::{DeviceRequest, DeviceResponse};
 
-use crate::bringup::write_bytes;
+use crate::board_init::write_bytes;
 
 const COMMAND_FRAME_CAPACITY: usize = 512;
 const READ_CHUNK_CAPACITY: usize = 64;
