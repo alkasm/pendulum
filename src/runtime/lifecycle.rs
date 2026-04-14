@@ -1,7 +1,7 @@
 use super::{
     effects::{
-        ManagementAction, ManagementActionCompletion, ManagementActionResult, ManagementServices,
-        CommandReply, execute_management_action,
+        CommandReply, ManagementAction, ManagementActionCompletion, ManagementActionResult,
+        ManagementServices, execute_management_action,
     },
     model::DeviceModel,
 };
@@ -65,9 +65,7 @@ pub fn plan_command_request(
         DeviceRequest::StartMotorCalibration => plan_start_motor_calibration(device),
         DeviceRequest::StartRun => plan_start_run(device),
         DeviceRequest::StopRun => plan_stop_run(device),
-        DeviceRequest::Reboot => {
-            CommandPlan::Immediate(CommandReply::reboot(DeviceResponse::Ack))
-        }
+        DeviceRequest::Reboot => CommandPlan::Immediate(CommandReply::reboot(DeviceResponse::Ack)),
     }
 }
 
@@ -449,7 +447,8 @@ mod tests {
         });
         let mut services = MockServices::default();
 
-        let reply = handle_command_request(&mut runtime, DeviceRequest::ValidateWifi, &mut services);
+        let reply =
+            handle_command_request(&mut runtime, DeviceRequest::ValidateWifi, &mut services);
 
         assert_eq!(
             reply.response,

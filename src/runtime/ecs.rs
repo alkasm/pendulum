@@ -1,10 +1,8 @@
 use bevy_ecs::prelude::*;
 
 use super::{
-    effects::{ManagementAction, ManagementActionCompletion, ManagementActionResult, CommandReply},
-    lifecycle::{
-        CommandPlan, boot_device_model, finalize_command_request, plan_command_request,
-    },
+    effects::{CommandReply, ManagementAction, ManagementActionCompletion, ManagementActionResult},
+    lifecycle::{CommandPlan, boot_device_model, finalize_command_request, plan_command_request},
     model::DeviceModel,
 };
 use crate::{
@@ -46,7 +44,9 @@ pub struct PendingDeviceRequestPlan {
 }
 
 #[derive(Resource, Debug, Clone, Default)]
-pub struct PendingDeviceActionResult(pub Option<Result<ManagementActionResult, DeviceCommandError>>);
+pub struct PendingDeviceActionResult(
+    pub Option<Result<ManagementActionResult, DeviceCommandError>>,
+);
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PendingReboot(pub bool);

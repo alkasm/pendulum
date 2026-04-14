@@ -23,9 +23,8 @@ pub use ecs::{
 #[cfg(feature = "std")]
 pub use ecs::{TelemetryPublisher, publish_telemetry_system};
 pub use effects::{
-    ManagementAction, ManagementActionCompletion, ManagementActionResult, CommandReply,
-    ManagementServices,
-    execute_management_action,
+    CommandReply, ManagementAction, ManagementActionCompletion, ManagementActionResult,
+    ManagementServices, execute_management_action,
 };
 pub use lifecycle::{
     CommandPlan, boot_device_model, finalize_command_request, handle_command_request,
