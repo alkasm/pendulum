@@ -1,7 +1,7 @@
 use super::{
     effects::{
-        DeviceAction, DeviceActionCompletion, DeviceActionResult, DeviceReply, DeviceServices,
-        execute_device_action,
+        ManagementAction, ManagementActionCompletion, ManagementActionResult, ManagementServices,
+        CommandReply, execute_management_action,
     },
     model::DeviceModel,
 };
@@ -13,47 +13,47 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub enum DeviceRequestPlan {
-    Immediate(DeviceReply),
+pub enum CommandPlan {
+    Immediate(CommandReply),
     Pending {
-        action: DeviceAction,
-        completion: DeviceActionCompletion,
+        action: ManagementAction,
+        completion: ManagementActionCompletion,
     },
 }
 
-pub fn plan_device_request(
+pub fn plan_command_request(
     device: &mut DeviceModel,
     request: DeviceRequest,
     device_info: DeviceInfo,
-) -> DeviceRequestPlan {
+) -> CommandPlan {
     match request {
         DeviceRequest::GetInfo => {
-            DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Info(device_info)))
+            CommandPlan::Immediate(CommandReply::new(DeviceResponse::Info(device_info)))
         }
         DeviceRequest::GetStatus => {
             device.sync_status();
-            DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Status(
+            CommandPlan::Immediate(CommandReply::new(DeviceResponse::Status(
                 device.status.clone(),
             )))
         }
         DeviceRequest::GetWifiStatus => {
             if device.status.mode != DeviceMode::Manufacturing {
-                DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+                CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
                     DeviceCommandError::UnsupportedInCurrentMode,
                 )))
             } else {
-                DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::WifiStatus(
+                CommandPlan::Immediate(CommandReply::new(DeviceResponse::WifiStatus(
                     device.config.wifi_status(),
                 )))
             }
         }
         DeviceRequest::GetCalibrationStatus => {
             if device.status.mode != DeviceMode::Manufacturing {
-                DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+                CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
                     DeviceCommandError::UnsupportedInCurrentMode,
                 )))
             } else {
-                DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::CalibrationStatus(
+                CommandPlan::Immediate(CommandReply::new(DeviceResponse::CalibrationStatus(
                     device.status.calibration.clone(),
                 )))
             }
@@ -66,80 +66,80 @@ pub fn plan_device_request(
         DeviceRequest::StartRun => plan_start_run(device),
         DeviceRequest::StopRun => plan_stop_run(device),
         DeviceRequest::Reboot => {
-            DeviceRequestPlan::Immediate(DeviceReply::reboot(DeviceResponse::Ack))
+            CommandPlan::Immediate(CommandReply::reboot(DeviceResponse::Ack))
         }
     }
 }
 
-pub fn finalize_device_request(
+pub fn finalize_command_request(
     device: &mut DeviceModel,
-    completion: DeviceActionCompletion,
-    outcome: Result<DeviceActionResult, DeviceCommandError>,
-) -> DeviceReply {
+    completion: ManagementActionCompletion,
+    outcome: Result<ManagementActionResult, DeviceCommandError>,
+) -> CommandReply {
     match completion {
-        DeviceActionCompletion::SetMode { next_config } => {
+        ManagementActionCompletion::SetMode { next_config } => {
             if outcome.is_err() {
-                return DeviceReply::new(DeviceResponse::Error(
+                return CommandReply::new(DeviceResponse::Error(
                     DeviceCommandError::PersistenceFailed,
                 ));
             }
 
             device.config = next_config;
             device.sync_status();
-            DeviceReply::reboot(DeviceResponse::Ack)
+            CommandReply::reboot(DeviceResponse::Ack)
         }
-        DeviceActionCompletion::SetWifiConfig { next_config } => match outcome {
-            Ok(DeviceActionResult::WifiValidation(report)) => {
+        ManagementActionCompletion::SetWifiConfig { next_config } => match outcome {
+            Ok(ManagementActionResult::WifiValidation(report)) => {
                 device.config = next_config;
                 device.sync_status();
-                DeviceReply::new(DeviceResponse::WifiValidation(report))
+                CommandReply::new(DeviceResponse::WifiValidation(report))
             }
             Ok(_) | Err(_) => {
-                DeviceReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
+                CommandReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
             }
         },
-        DeviceActionCompletion::ClearWifiConfig { next_config } => {
+        ManagementActionCompletion::ClearWifiConfig { next_config } => {
             if outcome.is_err() {
-                return DeviceReply::new(DeviceResponse::Error(
+                return CommandReply::new(DeviceResponse::Error(
                     DeviceCommandError::PersistenceFailed,
                 ));
             }
 
             device.config = next_config;
             device.sync_status();
-            DeviceReply::new(DeviceResponse::Ack)
+            CommandReply::new(DeviceResponse::Ack)
         }
-        DeviceActionCompletion::ValidateWifi => match outcome {
-            Ok(DeviceActionResult::WifiValidation(report)) => {
-                DeviceReply::new(DeviceResponse::WifiValidation(report))
+        ManagementActionCompletion::ValidateWifi => match outcome {
+            Ok(ManagementActionResult::WifiValidation(report)) => {
+                CommandReply::new(DeviceResponse::WifiValidation(report))
             }
             Ok(_) | Err(_) => {
-                DeviceReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
+                CommandReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
             }
         },
-        DeviceActionCompletion::StartMotorCalibration => match outcome {
-            Ok(DeviceActionResult::Calibration(calibration)) => {
+        ManagementActionCompletion::StartMotorCalibration => match outcome {
+            Ok(ManagementActionResult::Calibration(calibration)) => {
                 device.set_calibration(calibration);
                 device.transition_to_service();
-                DeviceReply::new(DeviceResponse::CalibrationStatus(
+                CommandReply::new(DeviceResponse::CalibrationStatus(
                     device.status.calibration.clone(),
                 ))
             }
             Ok(_) => {
                 device.transition_to_service();
-                DeviceReply::new(DeviceResponse::Error(DeviceCommandError::CalibrationFailed))
+                CommandReply::new(DeviceResponse::Error(DeviceCommandError::CalibrationFailed))
             }
             Err(DeviceCommandError::CalibrationFailed) => {
                 device.transition_to_service();
-                DeviceReply::new(DeviceResponse::Error(DeviceCommandError::CalibrationFailed))
+                CommandReply::new(DeviceResponse::Error(DeviceCommandError::CalibrationFailed))
             }
             Err(DeviceCommandError::PersistenceFailed) => {
                 device.transition_to_service();
-                DeviceReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
+                CommandReply::new(DeviceResponse::Error(DeviceCommandError::PersistenceFailed))
             }
             Err(err) => {
                 device.transition_to_service();
-                DeviceReply::new(DeviceResponse::Error(err))
+                CommandReply::new(DeviceResponse::Error(err))
             }
         },
     }
@@ -175,27 +175,27 @@ pub fn boot_device_model(
     )
 }
 
-pub fn handle_device_request<S>(
+pub fn handle_command_request<S>(
     device: &mut DeviceModel,
     request: DeviceRequest,
     services: &mut S,
-) -> DeviceReply
+) -> CommandReply
 where
-    S: DeviceServices,
+    S: ManagementServices,
 {
-    match plan_device_request(device, request, services.device_info()) {
-        DeviceRequestPlan::Immediate(reply) => reply,
-        DeviceRequestPlan::Pending { action, completion } => {
-            let outcome = execute_device_action(action, services);
-            finalize_device_request(device, completion, outcome)
+    match plan_command_request(device, request, services.device_info()) {
+        CommandPlan::Immediate(reply) => reply,
+        CommandPlan::Pending { action, completion } => {
+            let outcome = execute_management_action(action, services);
+            finalize_command_request(device, completion, outcome)
         }
     }
 }
 
-fn plan_set_mode(device: &mut DeviceModel, mode: DeviceMode) -> DeviceRequestPlan {
+fn plan_set_mode(device: &mut DeviceModel, mode: DeviceMode) -> CommandPlan {
     if let DeviceMode::Production = mode {
         if let Some(fault) = production_fault(&device.config, &device.status.calibration) {
-            return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+            return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
                 DeviceCommandError::ProductionPrecondition(fault),
             )));
         }
@@ -203,73 +203,73 @@ fn plan_set_mode(device: &mut DeviceModel, mode: DeviceMode) -> DeviceRequestPla
 
     let mut next_config = device.config.clone();
     next_config.mode = mode;
-    DeviceRequestPlan::Pending {
-        action: DeviceAction::SaveDeviceConfig(next_config.clone()),
-        completion: DeviceActionCompletion::SetMode { next_config },
+    CommandPlan::Pending {
+        action: ManagementAction::SaveDeviceConfig(next_config.clone()),
+        completion: ManagementActionCompletion::SetMode { next_config },
     }
 }
 
 fn plan_set_wifi_config(
     device: &mut DeviceModel,
     credentials: crate::WifiCredentials,
-) -> DeviceRequestPlan {
+) -> CommandPlan {
     if !device.in_manufacturing_service() {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             device.service_mutation_error(),
         )));
     }
 
     let mut next_config = device.config.clone();
     next_config.wifi = Some(credentials.clone());
-    DeviceRequestPlan::Pending {
-        action: DeviceAction::SaveDeviceConfigAndValidateWifi {
+    CommandPlan::Pending {
+        action: ManagementAction::SaveDeviceConfigAndValidateWifi {
             next_config: next_config.clone(),
             credentials,
         },
-        completion: DeviceActionCompletion::SetWifiConfig { next_config },
+        completion: ManagementActionCompletion::SetWifiConfig { next_config },
     }
 }
 
-fn plan_clear_wifi_config(device: &mut DeviceModel) -> DeviceRequestPlan {
+fn plan_clear_wifi_config(device: &mut DeviceModel) -> CommandPlan {
     if !device.in_manufacturing_service() {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             device.service_mutation_error(),
         )));
     }
 
     let mut next_config = device.config.clone();
     next_config.wifi = None;
-    DeviceRequestPlan::Pending {
-        action: DeviceAction::SaveDeviceConfig(next_config.clone()),
-        completion: DeviceActionCompletion::ClearWifiConfig { next_config },
+    CommandPlan::Pending {
+        action: ManagementAction::SaveDeviceConfig(next_config.clone()),
+        completion: ManagementActionCompletion::ClearWifiConfig { next_config },
     }
 }
 
-fn plan_validate_wifi(device: &mut DeviceModel) -> DeviceRequestPlan {
+fn plan_validate_wifi(device: &mut DeviceModel) -> CommandPlan {
     if matches!(
         device.status.state,
         DeviceState::Running | DeviceState::Calibrating
     ) {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             DeviceCommandError::InvalidState,
         )));
     }
 
     let Some(credentials) = device.config.wifi.as_ref() else {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             DeviceCommandError::ProductionPrecondition(DeviceFault::MissingWifiConfig),
         )));
     };
 
-    DeviceRequestPlan::Pending {
-        action: DeviceAction::ValidateWifi(credentials.clone()),
-        completion: DeviceActionCompletion::ValidateWifi,
+    CommandPlan::Pending {
+        action: ManagementAction::ValidateWifi(credentials.clone()),
+        completion: ManagementActionCompletion::ValidateWifi,
     }
 }
 
-fn plan_start_motor_calibration(device: &mut DeviceModel) -> DeviceRequestPlan {
+fn plan_start_motor_calibration(device: &mut DeviceModel) -> CommandPlan {
     if !device.in_manufacturing_service() {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             device.service_mutation_error(),
         )));
     }
@@ -278,44 +278,44 @@ fn plan_start_motor_calibration(device: &mut DeviceModel) -> DeviceRequestPlan {
     device.status.state = DeviceState::Calibrating;
     device.status.fault = None;
 
-    DeviceRequestPlan::Pending {
-        action: DeviceAction::CalibrateMotor,
-        completion: DeviceActionCompletion::StartMotorCalibration,
+    CommandPlan::Pending {
+        action: ManagementAction::CalibrateMotor,
+        completion: ManagementActionCompletion::StartMotorCalibration,
     }
 }
 
-fn plan_start_run(device: &mut DeviceModel) -> DeviceRequestPlan {
+fn plan_start_run(device: &mut DeviceModel) -> CommandPlan {
     if !device.in_manufacturing_service() {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             device.service_mutation_error(),
         )));
     }
 
     if let Some(fault) = device.run_precondition_fault() {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             DeviceCommandError::ProductionPrecondition(fault),
         )));
     }
 
     device.prepare_for_run();
-    DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Ack))
+    CommandPlan::Immediate(CommandReply::new(DeviceResponse::Ack))
 }
 
-fn plan_stop_run(device: &mut DeviceModel) -> DeviceRequestPlan {
+fn plan_stop_run(device: &mut DeviceModel) -> CommandPlan {
     if device.status.mode != DeviceMode::Manufacturing {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             DeviceCommandError::UnsupportedInCurrentMode,
         )));
     }
 
     if device.status.state != DeviceState::Running {
-        return DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Error(
+        return CommandPlan::Immediate(CommandReply::new(DeviceResponse::Error(
             DeviceCommandError::InvalidState,
         )));
     }
 
     device.transition_to_service();
-    DeviceRequestPlan::Immediate(DeviceReply::new(DeviceResponse::Ack))
+    CommandPlan::Immediate(CommandReply::new(DeviceResponse::Ack))
 }
 
 #[cfg(test)]
@@ -352,7 +352,7 @@ mod tests {
         }
     }
 
-    impl DeviceServices for MockServices {
+    impl ManagementServices for MockServices {
         type Error = ();
 
         fn device_info(&self) -> DeviceInfo {
@@ -406,7 +406,7 @@ mod tests {
         });
         let mut services = MockServices::default();
 
-        let reply = handle_device_request(&mut runtime, DeviceRequest::GetStatus, &mut services);
+        let reply = handle_command_request(&mut runtime, DeviceRequest::GetStatus, &mut services);
 
         assert!(matches!(reply.response, DeviceResponse::Status(_)));
     }
@@ -423,7 +423,7 @@ mod tests {
         });
         let mut services = MockServices::default();
 
-        let reply = handle_device_request(
+        let reply = handle_command_request(
             &mut runtime,
             DeviceRequest::SetMode(DeviceMode::Production),
             &mut services,
@@ -449,7 +449,7 @@ mod tests {
         });
         let mut services = MockServices::default();
 
-        let reply = handle_device_request(&mut runtime, DeviceRequest::ValidateWifi, &mut services);
+        let reply = handle_command_request(&mut runtime, DeviceRequest::ValidateWifi, &mut services);
 
         assert_eq!(
             reply.response,

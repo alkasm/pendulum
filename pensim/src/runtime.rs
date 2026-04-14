@@ -15,12 +15,12 @@ use pendulum_lib::{
     imu::Imu,
     motor::Motor,
     runtime::{
-        ControlClock, ControlInputs, ControlOutputs, DeviceModelResource, DeviceServices,
-        MotorTelemetryResource, PendingDeviceActionResult, PendingDevicePlan, PendingDeviceRequest,
-        PendingDeviceResponse, PendingReboot, StepRuntime, TelemetryPublisher,
-        advance_clock_system, boot_device_model, control_system, device_request_finalize_system,
-        device_request_system, execute_device_action, initialize_runtime_world,
-        publish_telemetry_system, run_loop,
+        ControlClock, ControlInputs, ControlOutputs, ManagementServices,
+        DeviceModelResource, MotorTelemetryResource, PendingDeviceActionResult,
+        PendingDevicePlan, PendingDeviceRequest, PendingDeviceResponse, PendingReboot,
+        StepRuntime, TelemetryPublisher, advance_clock_system, boot_device_model,
+        control_system, device_request_finalize_system, device_request_system,
+        execute_management_action, initialize_runtime_world, publish_telemetry_system, run_loop,
     },
     settings_record::RecordLoad,
     transport,
@@ -82,7 +82,7 @@ impl SimServices {
     }
 }
 
-impl DeviceServices for SimServices {
+impl ManagementServices for SimServices {
     type Error = core::convert::Infallible;
 
     fn device_info(&self) -> DeviceInfo {
@@ -250,7 +250,7 @@ impl SimulationRuntime {
                         .0
                         .take()
                     {
-                        let result = execute_device_action(plan.action, &mut self.services);
+                        let result = execute_management_action(plan.action, &mut self.services);
                         {
                             let mut action_result = self
                                 .world

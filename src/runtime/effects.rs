@@ -4,12 +4,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeviceReply {
+pub struct CommandReply {
     pub response: DeviceResponse,
     pub reboot: bool,
 }
 
-impl DeviceReply {
+impl CommandReply {
     pub fn new(response: DeviceResponse) -> Self {
         Self {
             response,
@@ -25,7 +25,7 @@ impl DeviceReply {
     }
 }
 
-pub trait DeviceServices {
+pub trait ManagementServices {
     type Error;
 
     fn device_info(&self) -> DeviceInfo;
@@ -39,7 +39,7 @@ pub trait DeviceServices {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeviceAction {
+pub enum ManagementAction {
     SaveDeviceConfig(StoredDeviceConfig),
     SaveDeviceConfigAndValidateWifi {
         next_config: StoredDeviceConfig,
@@ -50,14 +50,14 @@ pub enum DeviceAction {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeviceActionResult {
+pub enum ManagementActionResult {
     Saved,
     WifiValidation(WifiValidationReport),
     Calibration(StoredMotorCalibration),
 }
 
 #[derive(Debug, Clone)]
-pub enum DeviceActionCompletion {
+pub enum ManagementActionCompletion {
     SetMode { next_config: StoredDeviceConfig },
     SetWifiConfig { next_config: StoredDeviceConfig },
     ClearWifiConfig { next_config: StoredDeviceConfig },
@@ -65,39 +65,39 @@ pub enum DeviceActionCompletion {
     StartMotorCalibration,
 }
 
-pub fn execute_device_action<S>(
-    action: DeviceAction,
+pub fn execute_management_action<S>(
+    action: ManagementAction,
     services: &mut S,
-) -> Result<DeviceActionResult, crate::DeviceCommandError>
+) -> Result<ManagementActionResult, crate::DeviceCommandError>
 where
-    S: DeviceServices,
+    S: ManagementServices,
 {
     match action {
-        DeviceAction::SaveDeviceConfig(config) => services
+        ManagementAction::SaveDeviceConfig(config) => services
             .save_device_config(&config)
-            .map(|_| DeviceActionResult::Saved)
+            .map(|_| ManagementActionResult::Saved)
             .map_err(|_| crate::DeviceCommandError::PersistenceFailed),
-        DeviceAction::SaveDeviceConfigAndValidateWifi {
+        ManagementAction::SaveDeviceConfigAndValidateWifi {
             next_config,
             credentials,
         } => match services.save_device_config(&next_config) {
             Ok(()) => {
                 let report = services.validate_wifi(&credentials);
-                Ok(DeviceActionResult::WifiValidation(WifiValidationReport {
+                Ok(ManagementActionResult::WifiValidation(WifiValidationReport {
                     status: next_config.wifi_status(),
                     result: report.result,
                 }))
             }
             Err(_) => Err(crate::DeviceCommandError::PersistenceFailed),
         },
-        DeviceAction::ValidateWifi(credentials) => Ok(DeviceActionResult::WifiValidation(
+        ManagementAction::ValidateWifi(credentials) => Ok(ManagementActionResult::WifiValidation(
             services.validate_wifi(&credentials),
         )),
-        DeviceAction::CalibrateMotor => match services.calibrate_motor() {
+        ManagementAction::CalibrateMotor => match services.calibrate_motor() {
             Ok(Some(calibration)) => services
                 .save_motor_calibration(&calibration)
                 .map_err(|_| crate::DeviceCommandError::PersistenceFailed)
-                .map(|_| DeviceActionResult::Calibration(calibration)),
+                .map(|_| ManagementActionResult::Calibration(calibration)),
             Ok(None) => Err(crate::DeviceCommandError::CalibrationFailed),
             Err(_) => Err(crate::DeviceCommandError::CalibrationFailed),
         },

@@ -1,9 +1,9 @@
 use bevy_ecs::prelude::*;
 
 use super::{
-    effects::{DeviceAction, DeviceActionCompletion, DeviceActionResult, DeviceReply},
+    effects::{ManagementAction, ManagementActionCompletion, ManagementActionResult, CommandReply},
     lifecycle::{
-        DeviceRequestPlan, boot_device_model, finalize_device_request, plan_device_request,
+        CommandPlan, boot_device_model, finalize_command_request, plan_command_request,
     },
     model::DeviceModel,
 };
@@ -34,19 +34,19 @@ pub struct DeviceInfoResource(pub DeviceInfo);
 pub struct PendingDeviceRequest(pub Option<DeviceRequest>);
 
 #[derive(Resource, Debug, Clone, Default)]
-pub struct PendingDeviceResponse(pub Option<DeviceReply>);
+pub struct PendingDeviceResponse(pub Option<CommandReply>);
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PendingDevicePlan(pub Option<PendingDeviceRequestPlan>);
 
 #[derive(Debug, Clone)]
 pub struct PendingDeviceRequestPlan {
-    pub action: DeviceAction,
-    pub completion: DeviceActionCompletion,
+    pub action: ManagementAction,
+    pub completion: ManagementActionCompletion,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
-pub struct PendingDeviceActionResult(pub Option<Result<DeviceActionResult, DeviceCommandError>>);
+pub struct PendingDeviceActionResult(pub Option<Result<ManagementActionResult, DeviceCommandError>>);
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PendingReboot(pub bool);
@@ -131,12 +131,12 @@ pub fn device_request_system(
     plan.0 = None;
     action_result.0 = None;
 
-    match plan_device_request(&mut device.0, request, device_info.0.clone()) {
-        DeviceRequestPlan::Immediate(reply) => {
+    match plan_command_request(&mut device.0, request, device_info.0.clone()) {
+        CommandPlan::Immediate(reply) => {
             reboot.0 = reply.reboot;
             response.0 = Some(reply);
         }
-        DeviceRequestPlan::Pending { action, completion } => {
+        CommandPlan::Pending { action, completion } => {
             plan.0 = Some(PendingDeviceRequestPlan { action, completion });
         }
     }
@@ -158,7 +158,7 @@ pub fn device_request_finalize_system(
         return;
     };
 
-    let reply = finalize_device_request(&mut device.0, pending_plan.completion, outcome);
+    let reply = finalize_command_request(&mut device.0, pending_plan.completion, outcome);
     reboot.0 = reply.reboot;
     response.0 = Some(reply);
 }

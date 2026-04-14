@@ -23,11 +23,12 @@ pub use ecs::{
 #[cfg(feature = "std")]
 pub use ecs::{TelemetryPublisher, publish_telemetry_system};
 pub use effects::{
-    DeviceAction, DeviceActionCompletion, DeviceActionResult, DeviceReply, DeviceServices,
-    execute_device_action,
+    ManagementAction, ManagementActionCompletion, ManagementActionResult, CommandReply,
+    ManagementServices,
+    execute_management_action,
 };
 pub use lifecycle::{
-    DeviceRequestPlan, boot_device_model, finalize_device_request, handle_device_request,
-    plan_device_request,
+    CommandPlan, boot_device_model, finalize_command_request, handle_command_request,
+    plan_command_request,
 };
 pub use model::DeviceModel;
