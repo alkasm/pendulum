@@ -83,10 +83,12 @@ where
         } => match services.save_device_config(&next_config) {
             Ok(()) => {
                 let report = services.validate_wifi(&credentials);
-                Ok(ManagementActionResult::WifiValidation(WifiValidationReport {
-                    status: next_config.wifi_status(),
-                    result: report.result,
-                }))
+                Ok(ManagementActionResult::WifiValidation(
+                    WifiValidationReport {
+                        status: next_config.wifi_status(),
+                        result: report.result,
+                    },
+                ))
             }
             Err(_) => Err(crate::DeviceCommandError::PersistenceFailed),
         },
