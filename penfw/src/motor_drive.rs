@@ -1,11 +1,11 @@
 use esp_hal::{
     gpio::{Level, Output, OutputConfig},
     mcpwm::{
-        McPwm, PeripheralClockConfig,
         operator::{PwmActions, PwmPin, PwmPinConfig, PwmUpdateMethod, UpdateAction},
         timer::PwmWorkingMode,
+        McPwm, PeripheralClockConfig,
     },
-    peripherals::{GPIO5, GPIO16, GPIO17, GPIO18, GPIO19, GPIO23, GPIO33, MCPWM0},
+    peripherals::{GPIO16, GPIO17, GPIO18, GPIO19, GPIO23, GPIO33, GPIO5, MCPWM0},
     time::Rate,
 };
 use pendulum_lib::runtime::ControlDrive;

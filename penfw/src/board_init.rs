@@ -3,13 +3,13 @@
 use core::fmt::Write;
 
 use esp_hal::{
-    Blocking,
     clock::CpuClock,
     delay::Delay,
     i2c::master::{Config as I2cConfig, I2c},
     peripherals,
     time::Rate,
     uart::{Config as UartConfig, Uart},
+    Blocking,
 };
 
 pub const HALL_SENSOR_ADDR: u8 = 0x22;

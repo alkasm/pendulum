@@ -1,7 +1,7 @@
 use esp_hal::{
-    Blocking,
     analog::adc::{Adc, AdcConfig, AdcPin, Attenuation},
     peripherals::{ADC1, GPIO32, GPIO35, GPIO36, GPIO39},
+    Blocking,
 };
 
 const ADC_FULL_SCALE_COUNTS: f32 = 4095.0;

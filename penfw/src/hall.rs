@@ -1,8 +1,8 @@
-use esp_hal::{Blocking, i2c::master::I2c};
+use esp_hal::{i2c::master::I2c, Blocking};
 use pendulum_lib::{HallMeasurement, HallTelemetry};
 
 use crate::{
-    board_init::{HALL_SENSOR_ADDR, i2c_device_present},
+    board_init::{i2c_device_present, HALL_SENSOR_ADDR},
     hw::{tmag5273_configure_default_on_bus, tmag5273_read_measurement_on_bus},
 };
 

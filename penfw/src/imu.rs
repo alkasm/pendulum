@@ -1,8 +1,8 @@
-use esp_hal::{Blocking, i2c::master::I2c};
+use esp_hal::{i2c::master::I2c, Blocking};
 use pendulum_lib::{
-    PendulumEstimateTelemetry,
     estimation::{Acceleration3, AngularVelocity3, PendulumImuEstimator, RawImuSample},
     pendulum::PendulumGeometry,
+    PendulumEstimateTelemetry,
 };
 use uom::si::{
     acceleration::meter_per_second_squared,
@@ -12,7 +12,7 @@ use uom::si::{
 
 use crate::{
     board_init::i2c_device_present,
-    hw::{GY521_DEFAULT_I2C_ADDR, Gy521Error, read_raw_measurement, verify_address, wake_device},
+    hw::{read_raw_measurement, verify_address, wake_device, Gy521Error, GY521_DEFAULT_I2C_ADDR},
 };
 
 pub struct Gy521Session {
